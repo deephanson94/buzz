@@ -356,3 +356,47 @@ def test_detour_rejects_avoided_module():
     s2 = Session(here="a", discovered=["a"], seen=["a"])
     r2 = engine.answer(w, s2, "q1", "walk", ["a", "h", "b"])
     assert r2["correct"]
+
+
+def test_walk_retry_then_correct(world):
+    s = engine.new_session(world)
+    q = next(q for q in world.questions.values() if q.qtype == "cycle")
+    ex = q.truth["example"]
+    bad = [ex[0], ex[0], ex[-1]]
+    r1 = engine.answer(world, s, q.id, "walk", bad)
+    assert r1.get("retry") and q.id not in s.resolved
+    r2 = engine.answer(world, s, q.id, "walk", ex)
+    assert r2["correct"] and 0 < r2["gained"] < q.xp
+    assert "your chain checks out" in r2["explain"]
+
+
+def test_elder_and_hotspot_verbs():
+    from buzz.model import World, Question, Module, Zone, Session
+    w = World(repo="x", sha="y")
+    for n, born, commits in (("a", "2019-01-01", 30), ("b", "2022-01-01", 5)):
+        w.modules[n] = Module(name=n, path=n, zone="z1", born=born,
+                              commits=commits)
+    w.zones["z1"] = Zone(id="z1", name="Z", members=["a", "b"])
+    w.questions["q1"] = Question(
+        id="q1", zone="z1", qtype="elder", verb="edge", prompt="",
+        truth={"src": "a", "dst": "b", "born_src": "2019-01-01",
+               "born_dst": "2022-01-01"}, xp=15)
+    w.questions["q2"] = Question(
+        id="q2", zone="z1", qtype="hotspot", verb="point", prompt="",
+        truth={"module": "a", "commits": 30}, xp=15)
+    s = Session(here="a", discovered=["a"], seen=["a"])
+    r = engine.answer(w, s, "q1", "edge", ["a", "b"])
+    assert r["correct"] and "2019" in r["explain"]
+    s2 = Session(here="a", discovered=["a"], seen=["a"])
+    r2 = engine.answer(w, s2, "q1", "edge", ["b", "a"])
+    assert not r2["correct"] and "wrong direction" in r2["note"]
+    r3 = engine.answer(w, s, "q2", "point", ["a"])
+    assert r3["correct"]
+
+
+def test_who_and_cross_zone_edges(world):
+    out = engine.who(world, "base")
+    assert any("core" in ln for ln in out)
+    zid = world.modules["base"].zone
+    dump = engine.zone_edges(world, zid)
+    assert dump[0].startswith("top-level import edges")

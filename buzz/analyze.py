@@ -156,18 +156,20 @@ def short_names(dotted: list[str]) -> dict[str, str]:
 
 
 def git_history(root: Path, path_to_name: dict[str, str]):
-    """churn, authors, co-change from `git log --name-only`."""
+    """churn, authors, co-change, first-commit date from `git log --name-only`."""
     churn: Counter = Counter()
     authors: defaultdict[str, set] = defaultdict(set)
     cochange: Counter = Counter()
+    born: dict[str, str] = {}
     try:
         raw = subprocess.run(
-            ["git", "log", "--no-merges", "--name-only", "--pretty=format:__C__%an"],
+            ["git", "log", "--no-merges", "--name-only",
+             "--pretty=format:__C__%an|%as"],
             cwd=root, capture_output=True, text=True, timeout=300,
         ).stdout
     except Exception:
-        return churn, authors, cochange
-    author = None
+        return churn, authors, cochange, born
+    author, date = None, ""
     files: list[str] = []
 
     def flush():
@@ -175,6 +177,7 @@ def git_history(root: Path, path_to_name: dict[str, str]):
         for m in mods:
             churn[m] += 1
             authors[m].add(author)
+            born[m] = date  # log is newest-first: the last write wins = oldest
         if 2 <= len(mods) <= MEGA_COMMIT:
             for i, a in enumerate(mods):
                 for b in mods[i + 1:]:
@@ -184,13 +187,13 @@ def git_history(root: Path, path_to_name: dict[str, str]):
         if line.startswith("__C__"):
             if author is not None:
                 flush()
-            author = line[5:]
+            author, _, date = line[5:].partition("|")
             files = []
         elif line.strip():
             files.append(line.strip())
     if author is not None:
         flush()
-    return churn, authors, cochange
+    return churn, authors, cochange, born
 
 
 def _norm(d: dict[str, float]) -> dict[str, float]:
@@ -306,7 +309,7 @@ def analyze(repo: Path) -> World:
     btw = nx.betweenness_centrality(G)
 
     path_to_name = {str(p.relative_to(repo)): names[d] for d, p in files.items()}
-    churn, authors, cochange = git_history(repo, path_to_name)
+    churn, authors, cochange, born = git_history(repo, path_to_name)
 
     for d, p in files.items():
         n = names[d]
@@ -319,6 +322,7 @@ def analyze(repo: Path) -> World:
             loc=loc, commits=churn.get(n, 0), authors=len(authors.get(n, ())),
             pagerank=round(pr.get(n, 0.0), 6), betweenness=round(btw.get(n, 0.0), 6),
             in_degree=G.in_degree(n), out_degree=G.out_degree(n),
+            born=born.get(n, ""),
         )
     world.edges = [Edge(s, t, k) for (s, t), k in sorted(edges.items())]
 

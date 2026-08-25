@@ -40,7 +40,9 @@ def render_map(world: World, s: Session) -> str:
         vis = [m for m in z.members if m in s.seen and m not in masked]
         zq = [q for q in world.questions.values() if q.zone == z.id and not q.boss]
         done = sum(1 for q in zq if q.id in s.resolved)
-        status = " *CLEARED*" if z.id in s.cleared else f"  quests {done}/{len(zq)}"
+        status = (" *CLEARED*" if z.id in s.cleared
+                  else " (side content - no quests)" if not zq
+                  else f"  quests {done}/{len(zq)}")
         known = z.id in {world.modules[m].zone for m in s.discovered}
         title = z.name if known else "??? (unexplored district)"
         lines.append(f"[{z.id}] {title}{status}")
@@ -101,7 +103,9 @@ def render_look(world: World, s: Session, at: str | None = None) -> str:
                  else f"zone: {z.name} ({z.id}) | role: {m.role}")
     lines = [
         f"--- {node}{'' if node == s.here else '  (spyglass view)'} ---",
-        f"file: {m.path} | {m.loc} lines | {m.commits} commits by {m.authors} author(s)",
+        f"file: {m.path} | {m.loc} lines | {m.commits} commits by "
+        f"{m.authors} author(s)"
+        + (f" | first commit {m.born}" if m.born else ""),
         zone_line,
         f"imported by {m.in_degree} module(s)"
         + (": " + ", ".join(sorted(e.src for e in world.in_edges(node) if e.src in s.discovered))
@@ -130,6 +134,8 @@ def render_look(world: World, s: Session, at: str | None = None) -> str:
             lines.append(f"  - {e.dst}  [types-only: never runs]")
         else:
             lines.append(f"  > {e.dst}")
+    lines.append("legend: > always-runs | # sealed tunnel | ~ unsealed tunnel "
+                 "| - types-only (never runs)")
     return "\n".join(lines)
 
 
@@ -182,7 +188,9 @@ def render_status(world: World, s: Session) -> str:
         f"(rank only ever climbs)"
         + (f" | accuracy so far: {s.xp}/{s.max_xp}" if s.max_xp else ""),
         f"coverage: {d}/{total} modules discovered",
-        f"zones cleared: {len(s.cleared)}/{len(world.zones)}"
+        f"zones cleared: {len(s.cleared)}/"
+        f"{sum(1 for z in world.zones if any(q.zone == z and not q.boss for q in world.questions.values()))}"
+        f" clearable"
         + (f" ({', '.join(world.zones[z].name for z in s.cleared)})" if s.cleared else ""),
         f"questions: {solved} solved, "
         f"{sum(1 for v in s.resolved.values() if v == 'partial')} partial, "
@@ -217,6 +225,7 @@ exploring (free, no XP):
                                see on the map
   buzz probe <a> <b>           how are two modules related? shows import
                                edges (and their kind) + git co-change count
+  buzz who <module>            who imports it, across the whole hive
   buzz scout <zone>            reveal a district's module NAMES (not edges)
   buzz quests all              one-line progress for every district
 

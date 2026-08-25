@@ -33,7 +33,11 @@ def load_world() -> World:
 def load_session(world: World) -> Session:
     p = session_path()
     if not p.exists():
-        raise SystemExit("no session. Run: buzz play")
+        name = os.environ.get("BUZZ_SESSION", "default")
+        raise SystemExit(
+            f"no session named '{name}' in {p.parent} - run 'buzz play' to "
+            f"start one, and check you are in the game directory with the "
+            f"same BUZZ_SESSION exported as before")
     return Session.load(p)
 
 
@@ -164,7 +168,7 @@ def main(argv: list[str] | None = None) -> None:
             qid, verb, params = rest[0], rest[1], rest[2:]
             pre_log = len(s.log)
             r = engine.answer(world, s, qid, verb, params)
-            lesson = engine.LESSONS.get(r["q"].qtype)
+            lesson = r["q"].lesson or engine.LESSONS.get(r["q"].qtype)
             if r.get("retry"):
                 print(f"NEARLY. {r['note']}")
             elif r["correct"]:
@@ -185,6 +189,10 @@ def main(argv: list[str] | None = None) -> None:
                 print("\n" + render.render_status(world, s))
             else:
                 print("\n" + _try_next(world, s))
+        elif cmd == "who":
+            if not rest:
+                raise GameError("usage: buzz who <module>")
+            print("\n".join(engine.who(world, rest[0])))
         elif cmd == "probe":
             if len(rest) != 2:
                 raise GameError("usage: buzz probe <module-a> <module-b>")

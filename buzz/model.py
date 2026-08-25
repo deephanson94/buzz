@@ -42,6 +42,7 @@ class Module:
     betweenness: float = 0.0
     in_degree: int = 0
     out_degree: int = 0
+    born: str = ""            # date of first commit touching this file
 
 
 @dataclass
@@ -71,6 +72,7 @@ class Question:
     distance: int = 2         # distinct files needed to answer
     boss: bool = False
     followup_of: str | None = None
+    lesson: str = ""          # overrides the generic per-qtype lesson line
 
 
 @dataclass

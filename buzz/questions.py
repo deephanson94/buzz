@@ -30,10 +30,10 @@ def _flavor(world: World, options: list[str]) -> str:
 
 
 def _q(world: World, zone: str, qtype: str, verb: str, prompt: str, truth: dict,
-       xp: int, distance: int, boss: bool = False) -> Question:
+       xp: int, distance: int, boss: bool = False, lesson: str = "") -> Question:
     qid = f"q{len(world.questions) + 1}"
     q = Question(id=qid, zone=zone, qtype=qtype, verb=verb, prompt=prompt,
-                 truth=truth, xp=xp, distance=distance, boss=boss)
+                 truth=truth, xp=xp, distance=distance, boss=boss, lesson=lesson)
     world.questions[qid] = q
     return q
 
@@ -58,12 +58,13 @@ def gen_walk(world: World, G: nx.DiGraph, zone_id: str, count: int = 2,
             except nx.NetworkXNoPath:
                 continue
             if 2 <= d <= 4:
-                # prefer paths that end somewhere important
-                pairs.append((d, world.modules[b].pagerank, a, b))
-    pairs.sort(key=lambda t: (-t[0], -t[1]))
+                # prefer paths that end somewhere important; deprioritize
+                # dotted sub-package files (surprising as exact endpoints)
+                pairs.append((d, "." in b, world.modules[b].pagerank, a, b))
+    pairs.sort(key=lambda t: (-t[0], t[1], -t[2]))
     made = 0
     taken: set[str] = set()
-    for d, _, a, b in pairs:
+    for d, _, _, a, b in pairs:
         if made >= count or a in taken or b in taken:
             continue
         if _sig("walk", a, b) in used:
@@ -202,7 +203,9 @@ def gen_boss_reach(world: World, G: nx.DiGraph, boss: str, used: set) -> int:
        f"through modules outside this list - check every hop. "
        f"Candidates: {', '.join(cands)}.",
        {"target": boss, "region": sorted(picks), "why": why},
-       xp=(10 + 5 * len(picks)) * BOSS_XP_MULT, distance=len(cands), boss=True)
+       xp=(10 + 5 * len(picks)) * BOSS_XP_MULT, distance=len(cands), boss=True,
+       lesson=("import-time footprint = FORWARD reachability over always-run "
+               "imports: everything that must load before your import returns"))
     return 1
 
 
@@ -339,6 +342,54 @@ def gen_place(world: World, G: nx.DiGraph, zone_id: str,
     return 0
 
 
+def gen_elder(world: World, zone_id: str, used: set | None = None) -> int:
+    """Time's arrow: which of two modules entered git history first?
+    A Tier-1 (git-semantics) quest - the import graph knows nothing of it."""
+    zone = world.zones[zone_id]
+    used = used if used is not None else set()
+    if _sig("elder", zone_id) in used:
+        return 0
+    dated = [m for m in zone.members
+             if world.modules[m].born and world.modules[m].commits >= 5]
+    dated.sort(key=lambda m: world.modules[m].born)
+    if len(dated) < 2:
+        return 0
+    old, new = dated[0], dated[-1]
+    if world.modules[old].born[:4] == world.modules[new].born[:4]:
+        return 0  # same year: too close to be interesting or fair
+    used.add(_sig("elder", zone_id))
+    _q(world, zone_id, "elder", "edge",
+       f"The elders' dispute. Two residents of {zone.name} both claim to be "
+       f"the district's founder: {min(old, new)} and {max(old, new)}. Git "
+       f"remembers. Draw time's arrow from the elder to the newcomer: "
+       f"answer edge <older> <newer>.",
+       {"src": old, "dst": new,
+        "born_src": world.modules[old].born, "born_dst": world.modules[new].born},
+       xp=15, distance=2)
+    return 1
+
+
+def gen_hotspot(world: World, zone_id: str, used: set | None = None) -> int:
+    """Point at the district's most-reworked module (churn hotspot)."""
+    zone = world.zones[zone_id]
+    used = used if used is not None else set()
+    if _sig("hotspot", zone_id) in used or len(zone.members) < 4:
+        return 0
+    ranked = sorted(zone.members, key=lambda m: -world.modules[m].commits)
+    top, second = ranked[0], ranked[1]
+    c1, c2 = world.modules[top].commits, world.modules[second].commits
+    if c1 < 10 or c1 < c2 * 1.3:
+        return 0  # no clear hotspot
+    used.add(_sig("hotspot", zone_id))
+    _q(world, zone_id, "hotspot", "point",
+       f"Storm damage survey. One building in {zone.name} has been rebuilt "
+       f"far more often than any other - the district's churn hotspot, where "
+       f"bugs and features keep landing. Point at it: answer point <module>.",
+       {"module": top, "commits": c1},
+       xp=15, distance=len(zone.members) // 2 + 1)
+    return 1
+
+
 def gen_gate(world: World, G: nx.DiGraph, zone_id: str,
              used: set | None = None) -> int:
     """Chokepoint: a pair (a, b) whose every top-level import route runs
@@ -428,15 +479,22 @@ def generate_questions(world: World) -> None:
             n += gen_walk(world, Gtop, z.id, count=1, used=used)
             n += gen_gate(world, Gtop, z.id, used=used)
             n += gen_ghost(world, z.id, used=used)
+            n += gen_elder(world, z.id, used=used)
             n += gen_place(world, Gfull, z.id, used=used)
-            n += gen_hub(world, Gtop, z.id, used=used)
         else:
             n += gen_detour(world, Gtop, z.id, used=used)
             n += gen_region(world, Gtop, z.id, used=used)
             n += gen_gate(world, Gtop, z.id, used=used)
+            n += gen_hotspot(world, z.id, used=used)
             n += gen_hub(world, Gtop, z.id, used=used)
             if n < 3:
                 n += gen_walk(world, Gtop, z.id, count=1, used=used)
+        # top up thin zones only - if every district got every type, the
+        # variety rotation would collapse back into uniformity
+        if n < 4:
+            n += gen_elder(world, z.id, used=used)
+        if n < 4:
+            gen_hotspot(world, z.id, used=used)
         if n < 3:  # thin zone: top up so it stays clearable and worthwhile
             n += gen_walk(world, Gtop, z.id, count=1, used=used)
             n += gen_place(world, Gfull, z.id, used=used)

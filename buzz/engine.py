@@ -135,8 +135,35 @@ def zone_edges(world: World, zid: str) -> list[str]:
     if not edges:
         lines.append("  (none - this district is held together by git "
                      "history and convention, not imports)")
-    lines.append("(cross-district edges are not shown - walk the map for those; "
-                 "the tallying is on you)")
+    cross = [e for e in world.edges
+             if e.kind == TOP and (e.src in members) != (e.dst in members)]
+    if cross:
+        lines.append("cross-district edges touching it (answers often route "
+                     "through these):")
+        zone_of = {m: world.modules[m].zone for m in world.modules}
+        for e in sorted(cross, key=lambda e: (e.src, e.dst)):
+            if e.src in members:
+                lines.append(f"  {e.src} -> {e.dst} [{zone_of.get(e.dst, '?')}]")
+            else:
+                lines.append(f"  {e.src} [{zone_of.get(e.src, '?')}] -> {e.dst}")
+    lines.append("(the tallying is on you)")
+    return lines
+
+
+def who(world: World, name: str) -> list[str]:
+    """Reverse imports of one module across the WHOLE hive, by edge kind -
+    the fan-in view that per-module look can't give you."""
+    m = resolve_module(world, name)
+    kinds = {TOP: "top-level", LAZY: "function-level (sealed)",
+             TYPE: "TYPE_CHECKING-only"}
+    ins = world.in_edges(m)
+    lines = [f"who imports {m} (whole hive, direct edges only):"]
+    for e in sorted(ins, key=lambda e: (e.kind, e.src)):
+        z = world.modules[e.src].zone
+        lines.append(f"  {e.src} [{z}]  ({kinds[e.kind]})")
+    if not ins:
+        lines.append("  nobody - it is a root or an entry point")
+    lines.append("(transitive importers are not listed - chains are yours to walk)")
     return lines
 
 
@@ -192,6 +219,12 @@ def _explain(world: World, q: Question) -> str:
         return f"{t['module']} belongs to {world.zones[t['zone']].name} ({t['zone']})"
     if q.qtype == "direction":
         return f"{t['src']} imports {t['dst']}"
+    if q.qtype == "elder":
+        return (f"{t['src']} entered history {t['born_src']}, long before "
+                f"{t['dst']} ({t['born_dst']})")
+    if q.qtype == "hotspot":
+        return (f"{t['module']} is the hotspot: {t['commits']} commits of "
+                f"rework, more than anything else in the district")
     return ""
 
 
@@ -200,6 +233,10 @@ def _check_walk(world: World, s: Session, q: Question, path: list[str]) -> tuple
     if len(path) < 2:
         raise GameError("a walk needs at least two modules")
     if path[0] != t["src"] or path[-1] != t["dst"]:
+        dst = t["dst"]
+        if "." in dst and path[-1] == dst.rsplit(".", 1)[0]:
+            return False, (f"so close - you reached {path[-1]}, but the quest "
+                           f"asks for its submodule {dst}: one more hop")
         return False, f"the walk must start at {t['src']} and end at {t['dst']}"
     allowed = (TOP, TYPE) if TUNNEL not in s.abilities else (TOP, TYPE, LAZY)
     if q.qtype in ("cycle", "detour"):
@@ -239,6 +276,18 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
     if q.verb == "walk":
         path = [resolve_module(world, a) for a in args]
         correct, note = _check_walk(world, s, q, path)
+        if correct:
+            pass
+        elif s.tries.get(q.id, 0) < MAX_RETRIES:
+            # a bad hop is feedback, not a verdict: patch the chain and
+            # resubmit at a discount (typos shouldn't cost like ignorance)
+            s.tries[q.id] = s.tries.get(q.id, 0) + 1
+            left = MAX_RETRIES - s.tries[q.id]
+            return {"q": q, "correct": False, "partial": False, "retry": True,
+                    "gained": 0, "followup": None, "explain": "",
+                    "note": (f"{note}. Fix your route and resubmit "
+                             f"(-{int(RETRY_COST*100)}% XP per retry, "
+                             f"{left} left after this one)")}
     elif q.verb == "edge":
         if len(args) != 2:
             raise GameError("answer edge <importer> <imported>")
@@ -270,6 +319,12 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
             # an otherwise-correct reading of the graph
             if jac >= 0.4 and s.tries.get(q.id, 0) < MAX_RETRIES:
                 s.tries[q.id] = s.tries.get(q.id, 0) + 1
+                zone_members = set(world.zones[q.zone].members)
+                crosses = any(
+                    any(step not in zone_members for step in t.get("why", {}).get(m, []))
+                    for m in (truth_set - picks))
+                dir_hint = (" Hint: at least one missing module only connects "
+                            "through another district." if crosses else "")
                 return {"q": q, "correct": False, "partial": False,
                         "retry": True, "gained": 0, "followup": None,
                         "explain": "",
@@ -280,7 +335,7 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
                                  f"(-{int(RETRY_COST*100)}% XP per retry, "
                                  f"{MAX_RETRIES - s.tries[q.id]} retr"
                                  f"{'y' if MAX_RETRIES - s.tries[q.id] == 1 else 'ies'}"
-                                 f" left after this one)")}
+                                 f" left after this one).{dir_hint}")}
             missed = sorted(truth_set - picks)
             extra = sorted(picks - truth_set)
             bits = []
@@ -309,6 +364,11 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
 
     result = {"q": q, "correct": correct, "partial": partial, "note": note,
               "explain": _explain(world, q), "gained": 0, "followup": None}
+    if correct and q.verb == "walk":
+        # confirm THEIR chain, not a different valid one - the game agreeing
+        # with you should never read like a correction
+        result["explain"] = "your chain checks out: " + " -> ".join(
+            resolve_module(world, a) for a in args)
 
     if correct:
         s.resolved[q.id] = "correct"
@@ -380,12 +440,15 @@ def _post_answer(world: World, s: Session, q: Question) -> None:
     # Victory = boss down AND every clearable zone cleared (the hive mapped).
     boss_qs = [x for x in world.questions.values() if x.boss]
     boss_down = bool(boss_qs) and all(x.id in s.resolved for x in boss_qs)
-    if boss_down and "boss defeated" not in s.log:
+    if boss_down and not any(l.startswith("boss ") for l in s.log):
         remaining = [z for z in world.zones
                      if z not in s.cleared
                      and any(x.zone == z and not x.boss
                              for x in world.questions.values())]
-        s.log.append("boss defeated")
+        beaten = all(s.resolved.get(x.id) == "correct" for x in boss_qs)
+        s.log.append("boss defeated" if beaten else
+                     "boss lair emptied - but the boss eluded a true defeat "
+                     "(some answers had to be revealed)")
         if remaining:
             s.log.append(f"the hive's heart is yours, but {len(remaining)} "
                          f"district(s) remain unmapped - the campaign continues")
@@ -422,6 +485,10 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
         elif q.qtype == "gate":
             text = (f"walk from {t['a']} toward {t['b']} and watch which "
                     f"module every route funnels through")
+        elif q.qtype == "elder":
+            text = f"one of the two predates {t['born_dst'][:4]}"
+        elif q.qtype == "hotspot":
+            text = f"it has taken {t['commits']} commits of rework"
         else:
             text = f"read {t['src']}'s imports"
         s.hints[q.id] = 1
@@ -448,6 +515,15 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
                          key=lambda m: -world.modules[m].betweenness)
             cands = [m for m in top
                      if m not in t.get("accepted", []) and m != t["module"]][:2]
+            text = "it is one of: " + ", ".join(sorted(cands + [t["module"]]))
+        elif q.qtype == "elder":
+            text = (f"for the record, one of them entered history "
+                    f"{t['born_src']} - decide who that sounds like")
+        elif q.qtype == "hotspot":
+            zid = world.modules[t["module"]].zone
+            top = sorted(world.zones[zid].members,
+                         key=lambda m: -world.modules[m].commits)
+            cands = [m for m in top if m != t["module"]][:2]
             text = "it is one of: " + ", ".join(sorted(cands + [t["module"]]))
         else:
             text = f"{t['src']} is the importer"
@@ -526,6 +602,8 @@ LESSONS = {
     "hub": "in-degree inside a cluster tells you which wall is load-bearing",
     "gate": "high-betweenness modules are chokepoints: sever one and whole regions go dark",
     "detour": "redundant import paths are resilience - know the second road before you close the first",
+    "elder": "file age explains architecture: the oldest modules shaped every API that came after",
+    "hotspot": "churn concentrates: the file that changed most will change next - review it hardest",
     "direction": "always check which side of an import edge a module is on before touching it",
 }
 
