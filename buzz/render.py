@@ -40,9 +40,12 @@ def render_map(world: World, s: Session) -> str:
         vis = [m for m in z.members if m in s.seen and m not in masked]
         zq = [q for q in world.questions.values() if q.zone == z.id and not q.boss]
         done = sum(1 for q in zq if q.id in s.resolved)
+        n_boss = sum(1 for q in world.questions.values()
+                     if q.zone == z.id and q.boss)
         status = (" *CLEARED*" if z.id in s.cleared
                   else " (side content - no quests)" if not zq
-                  else f"  quests {done}/{len(zq)}")
+                  else f"  quests {done}/{len(zq)}"
+                  + (f" +{n_boss} boss" if n_boss else ""))
         known = z.id in {world.modules[m].zone for m in s.discovered}
         title = z.name if known else "??? (unexplored district)"
         lines.append(f"[{z.id}] {title}{status}")
@@ -191,10 +194,12 @@ def render_status(world: World, s: Session) -> str:
     d, total = coverage(world, s)
     solved = sum(1 for v in s.resolved.values() if v == "correct")
     total_xp = sum(q.xp for q in world.questions.values())
+    attempted = len(s.resolved)
     lines = [
-        f"XP {s.xp} of {total_xp} in the hive | rank: {rank(world, s)} "
-        f"(rank only ever climbs)"
-        + (f" | accuracy so far: {s.xp}/{s.max_xp}" if s.max_xp else ""),
+        f"XP {s.xp} (base pool {total_xp}; streak bonuses stack on top) "
+        f"| rank: {rank(world, s)} (rank only ever climbs)"
+        + (f" | solved clean: {solved}/{attempted} attempted"
+           if attempted else ""),
         f"coverage: {d}/{total} modules discovered",
         f"zones cleared: {len(s.cleared)}/"
         f"{sum(1 for z in world.zones if any(q.zone == z and not q.boss for q in world.questions.values()))}"
@@ -278,7 +283,11 @@ function-level imports (walkable after a cycle quest unlocks tunnel-vision);
 `-` TYPE_CHECKING imports never run. Blast-radius questions count ONLY
 top-level chains.
 
-Wrong answers cost nothing but reveal the truth (and spawn a follow-up quest).
+The economy: a wrong answer never subtracts XP or removes progress - it
+reveals the truth (and may spawn a follow-up quest). But it is not free
+information either: walk/region quests burn a retry (-30% of that quest's
+XP each), hints discount that quest, and any miss, hint, or retry resets
+your streak - clean first-try solves stack a +5%-per-solve XP bonus.
 Clear 2 zones to open the boss lair. The boss plus 3 cleared districts is
 CAMPAIGN CLEAR - the win. Districts beyond that are optional endgame; clear
 them all for the FULL CLEAR title.

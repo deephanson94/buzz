@@ -83,16 +83,17 @@ def can_travel(world: World, s: Session, dst: str) -> tuple[bool, str]:
     if dst in s.discovered:
         return True, "fast-travel"
     edge = next((e for e in world.out_edges(s.here) if e.dst == dst), None)
-    if edge:
-        if edge.kind == LAZY and TUNNEL not in s.abilities:
-            return False, (f"the tunnel from {s.here} to {dst} is SEALED - a "
-                           f"function-level import. Solve a cycle quest to unlock "
-                           f"tunnel-vision.")
+    if edge and not (edge.kind == LAZY and TUNNEL not in s.abilities):
         return True, "walk"
     if dst in s.seen:
-        # seen on the map but never visited and not adjacent: a scout can
-        # still fly there - the fog only hides what no one has named yet
+        # seen on the map: a scout can always fly there, even when the
+        # direct edge from here happens to be a sealed tunnel - the fog
+        # only blocks what no one has named yet
         return True, "scout-flight"
+    if edge:
+        return False, (f"the tunnel from {s.here} to {dst} is SEALED - a "
+                       f"function-level import hiding its destination. Solve "
+                       f"a cycle quest to unlock tunnel-vision.")
     return False, f"{dst} is still under fog - you have not seen it yet"
 
 
@@ -130,6 +131,16 @@ def peek(world: World, s: Session, name: str) -> str:
     return m
 
 
+def _name_seen(s: Session | None, *mods: str) -> None:
+    """A module named by a tool's output is no longer fog: the player has
+    been told it exists (playtesters rightly called the mismatch a bug)."""
+    if s is None:
+        return
+    for m in mods:
+        if m not in s.seen:
+            s.seen.append(m)
+
+
 def zone_edges(world: World, zid: str, s: Session | None = None) -> list[str]:
     """The induced top-level import subgraph of one district, with in-district
     in-degree tallies - the audit trail behind hub/region/gate quests. The
@@ -140,6 +151,7 @@ def zone_edges(world: World, zid: str, s: Session | None = None) -> list[str]:
              if e.kind == TOP and e.src in members and e.dst in members]
     lines = [f"top-level import edges inside {world.zones[zid].name} ({zid}):"]
     for e in sorted(edges, key=lambda e: (e.src, e.dst)):
+        _name_seen(s, e.src, e.dst)
         lines.append(f"  {e.src} -> {e.dst}")
     if not edges:
         lines.append("  (none - this district is held together by git "
@@ -181,7 +193,7 @@ def zone_edges(world: World, zid: str, s: Session | None = None) -> list[str]:
     return lines
 
 
-def who(world: World, name: str) -> list[str]:
+def who(world: World, name: str, s: Session | None = None) -> list[str]:
     """Reverse imports of one module across the WHOLE hive, by edge kind -
     the fan-in view that per-module look can't give you."""
     m = resolve_module(world, name)
@@ -190,6 +202,7 @@ def who(world: World, name: str) -> list[str]:
     ins = world.in_edges(m)
     lines = [f"who imports {m} (whole hive, direct edges only):"]
     for e in sorted(ins, key=lambda e: (e.kind, e.src)):
+        _name_seen(s, e.src)
         z = world.modules[e.src].zone
         lines.append(f"  {e.src} [{z}]  ({kinds[e.kind]})")
     if not ins:

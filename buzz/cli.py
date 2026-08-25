@@ -74,7 +74,8 @@ def cmd_play() -> None:
 This codebase is a hive and you are a scout bee. The map starts dark.
 Walk the import edges, light up the districts, and answer quests to prove
 you understand how the code fits together. XP comes ONLY from quests -
-exploring is free and safe. Wrong answers just reveal the truth.
+exploring is free and safe. Wrong answers reveal the truth and never
+subtract XP, but clean first-try solves build a streak bonus.
 
 You wake up at {world.start} - the module with the widest view of the hive.
 """)
@@ -234,13 +235,14 @@ def main(argv: list[str] | None = None) -> None:
         elif cmd == "who":
             if not rest:
                 raise GameError("usage: buzz who <module>")
-            print("\n".join(engine.who(world, rest[0])))
+            print("\n".join(engine.who(world, rest[0], s)))
         elif cmd == "probe":
             if len(rest) < 2:
                 raise GameError("usage: buzz probe <module> <suspect> [suspect ...]")
             a = engine.resolve_module(world, rest[0])
             for other in rest[1:]:
                 b = engine.resolve_module(world, other)
+                engine._name_seen(s, a, b)
                 print(f"[{a} x {b}]")
                 print(engine.probe(world, a, b))
         elif cmd == "hint":
