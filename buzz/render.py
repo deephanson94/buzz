@@ -221,8 +221,18 @@ def render_status(world: World, s: Session) -> str:
             lines.append(f"*** FULL CLEAR - every district mapped. Final "
                          f"rank: {rank(world, s)} ***")
     if s.log:
-        lines.append("")
-        lines.append("recent events: " + "; ".join(s.log[-3:]))
+        recent = s.log[-3:]
+        if s.victory:
+            # a stale "endgame districts stay open" line contradicts a
+            # FULL CLEAR banner - drop superseded lines from the recap
+            clearable = {z for z in world.zones
+                         if any(q.zone == z and not q.boss
+                                for q in world.questions.values())}
+            if clearable <= set(s.cleared):
+                recent = [l for l in recent if "endgame" not in l]
+        if recent:
+            lines.append("")
+            lines.append("recent events: " + "; ".join(recent))
     return "\n".join(lines)
 
 
@@ -241,8 +251,9 @@ exploring (free, no XP):
   buzz go <module>             walk an import edge, fast-travel anywhere
                                visited, or scout-fly to any module you can
                                see on the map
-  buzz probe <a> <b>           how are two modules related? shows import
-                               edges (and their kind) + git co-change count
+  buzz probe <a> <b> [c ...]   how are two modules related? shows import
+                               edges (and their kind) + git co-change count;
+                               extra names probe several suspects at once
   buzz who <module>            who imports it, across the whole hive
   buzz scout <zone>            reveal a district's module NAMES (not edges)
   buzz quests all              one-line progress for every district

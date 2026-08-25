@@ -91,9 +91,16 @@ def _try_next(world: World, s: Session) -> str:
         q = sorted(open_q, key=lambda q: q.xp)[0]
         return f"try next: buzz quest {q.id}"
     nxt = [z for z in sorted(world.zones.values(), key=lambda z: z.order)
-           if z.id not in s.cleared]
+           if z.id not in s.cleared
+           and any(q.zone == z.id and q.id not in s.resolved
+                   for q in world.questions.values())]
     if nxt:
         target = max(nxt[0].members, key=lambda m: world.modules[m].pagerank)
+        if target not in s.seen:
+            # never suggest a command that will bounce off the fog
+            s.seen.append(target)
+            return (f"this zone is done - your scouts point the way to "
+                    f"{nxt[0].name}: buzz go {target}")
         return (f"this zone is done - head for {nxt[0].name} "
                 f"(e.g. buzz go {target}, or explore with buzz map)")
     return "all zones cleared - buzz status"

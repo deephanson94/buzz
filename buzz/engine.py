@@ -155,10 +155,12 @@ def zone_edges(world: World, zid: str, s: Session | None = None) -> list[str]:
                 lines.append(f"  {e.src} -> {e.dst} [{zone_of.get(e.dst, '?')}]")
             else:
                 lines.append(f"  {e.src} [{zone_of.get(e.src, '?')}] -> {e.dst}")
-    hub_open = s is not None and any(
-        q.qtype == "hub" and q.zone == zid and q.id not in s.resolved
-        for q in world.questions.values())
-    if hub_open:
+    def quest_open(qt: str) -> bool:
+        return s is not None and any(
+            q.qtype == qt and q.zone == zid and q.id not in s.resolved
+            for q in world.questions.values())
+
+    if quest_open("hub"):
         lines.append("(in-degree tally withheld: this district's hub quest "
                      "is still open - that count IS the answer)")
     elif edges:
@@ -168,6 +170,14 @@ def zone_edges(world: World, zid: str, s: Session | None = None) -> list[str]:
         top = sorted(indeg.items(), key=lambda kv: (-kv[1], kv[0]))
         lines.append("in-district in-degree tally: "
                      + ", ".join(f"{m} ({n})" for m, n in top))
+    if quest_open("hotspot"):
+        lines.append("(churn ranking withheld: this district's hotspot quest "
+                     "is still open - that ranking IS the answer)")
+    else:
+        churn = sorted(members, key=lambda m: -world.modules[m].commits)[:8]
+        lines.append("churn ranking (commits): "
+                     + ", ".join(f"{m} ({world.modules[m].commits})"
+                                 for m in churn))
     return lines
 
 

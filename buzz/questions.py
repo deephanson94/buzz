@@ -284,15 +284,19 @@ def gen_ghost(world: World, zone_id: str, boss: bool = False,
             if m != x and m not in accepted
             and not world.has_edge(x, m) and not world.has_edge(m, x)][:4]
         suspects = sorted([accepted[0]] + decoys)
+        # deliberately no exact commit count in the prompt - playtesters
+        # string-matched it against probe output instead of reasoning
         lead = _flavor(world, [
             f"Ghost edge. No import statement of ANY kind (top-level, "
             f"function-level, or type-hint) connects {x} to it in either "
-            f"direction, yet git says they change together constantly ({topn}+ "
-            f"shared focused commits) - hidden coupling the import graph "
-            f"cannot see.",
+            f"direction, yet git says they change together constantly - "
+            f"hidden coupling the import graph cannot see.",
             f"The old bees whisper that {x} has a secret companion: a module "
             f"it never imports and is never imported by, yet the two have "
-            f"moved in lockstep through {topn}+ focused commits of history.",
+            f"moved in lockstep through years of history.",
+            f"Someone keeps editing two files in the same breath: {x}, and a "
+            f"module git says it has never once imported. Find the silent "
+            f"partner.",
         ])
         _q(world, zone_id, "ghost", "edge",
            f"{lead} Suspects: {', '.join(suspects)}. Investigate with "
