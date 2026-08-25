@@ -94,6 +94,14 @@ def apply_verdicts(world: World, results: dict) -> dict:
             if len(cycles) <= 1:
                 kept.append(qid)
                 continue
+        if q.boss:
+            # never gut the boss fight: a shallow boss quest is still the
+            # climax the campaign arc promises (a whole panel round found
+            # CAMPAIGN CLEAR firing with no boss interaction at all)
+            bosses = [x for x in world.questions.values() if x.boss]
+            if len(bosses) <= 1:
+                kept.append(qid)
+                continue
         if r.get("weak_solved"):
             dropped_shallow.append(qid)
             del world.questions[qid]

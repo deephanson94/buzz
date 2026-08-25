@@ -500,9 +500,17 @@ def gen_gate(world: World, G: nx.DiGraph, zone_id: str,
     used = used if used is not None else set()
     if _sig("gate", zone_id) in used:
         return 0
+    # a repo-wide funnel (registry __init__, core config) is a cut vertex
+    # for nearly every pair - gates through it are pattern-matchable and
+    # one answer solves them all; require a locally-interesting chokepoint
+    max_btw = max((m.betweenness for m in world.modules.values()), default=0) or 1
+    funnel = {name for name, m in world.modules.items()
+              if m.betweenness >= 0.1 * max_btw}
     cands = sorted(zone.members, key=lambda m: -world.modules[m].betweenness)
     for g in cands[:5]:
         if not G.has_node(g) or world.modules[g].betweenness == 0:
+            continue
+        if g in funnel:
             continue
         ups = [m for m in zone.members if m != g and nx.has_path(G, m, g)]
         downs = [m for m in zone.members if m != g and nx.has_path(G, g, m)]
@@ -517,22 +525,28 @@ def gen_gate(world: World, G: nx.DiGraph, zone_id: str,
                 dist = nx.shortest_path_length(G, a, b)
                 if dist < 2:
                     continue
-                # accept ANY node whose removal cuts a off from b
+                # accept any cut vertex - but only district-local ones, so
+                # the repo-wide funnel can't be a universal skeleton key
                 accepted = []
                 for c in nx.shortest_path(G, a, b)[1:-1]:
+                    if c in funnel:
+                        continue
                     H2 = G.copy()
                     H2.remove_node(c)
                     if not nx.has_path(H2, a, b):
                         accepted.append(c)
-                if not accepted:
+                if not accepted or g not in accepted:
                     continue
                 used.add(_sig("gate", zone_id))
                 _q(world, zone_id, "gate", "point",
                    f"The gate. Every top-level import route from {a} to {b} "
-                   f"squeezes through a single chokepoint - remove that one "
-                   f"module and {a} loses {b} entirely. Point at the "
-                   f"chokepoint: answer point <module>.",
-                   {"a": a, "b": b, "module": g, "accepted": sorted(set(accepted))},
+                   f"squeezes through a single LOCAL chokepoint - remove "
+                   f"that one module and {a} loses {b} entirely. (Repo-wide "
+                   f"funnels every route uses, like the package root, don't "
+                   f"count.) Point at the chokepoint: answer point <module>.",
+                   {"a": a, "b": b, "module": g,
+                    "accepted": sorted(set(accepted)),
+                    "witness": nx.shortest_path(G, a, b)},
                    xp=10 * (dist + 1), distance=dist + 1)
                 return 1
     return 0

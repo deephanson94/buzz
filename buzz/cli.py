@@ -216,6 +216,8 @@ def main(argv: list[str] | None = None) -> None:
             elif r["correct"]:
                 streak_note = f"  [streak x{s.streak}]" if s.streak >= 2 else ""
                 print(f"CORRECT! +{r['gained']} XP{streak_note}  ({r['explain']})")
+                if r["note"]:
+                    print(r["note"])
             elif r["partial"]:
                 print(f"CLOSE - partial credit, +{r['gained']} XP. {r['note']}")
                 print(f"the truth: {r['explain']}")

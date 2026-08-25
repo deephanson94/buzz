@@ -267,8 +267,10 @@ def _explain(world: World, q: Question) -> str:
                 + (f' ("{doc}")' if doc else ""))
     if q.qtype == "gate":
         doc = world.modules[t["module"]].doc
+        wit = t.get("witness")
         return (f"{t['module']} is the gate: every top-level route from "
                 f"{t['a']} to {t['b']} passes through it"
+                + (f" (one route: {' -> '.join(wit)})" if wit else "")
                 + (f' ("{doc}")' if doc else ""))
     if q.qtype == "ghost":
         return (f"{t['src']} secretly co-changes with {t['best']} "
@@ -421,6 +423,10 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
         m = resolve_module(world, args[0])
         ok_set = set(t.get("accepted") or [t["module"]])
         correct = m in ok_set
+        if correct and m != t["module"]:
+            # praise what they actually typed, never a different module
+            note = (f"your pick {m} works too - the canonical answer is "
+                    f"{t['module']}")
         if not correct:
             note = f"{m} is not the one"
     else:

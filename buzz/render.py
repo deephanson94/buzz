@@ -49,6 +49,12 @@ def render_map(world: World, s: Session) -> str:
         known = z.id in {world.modules[m].zone for m in s.discovered}
         title = z.name if known else "??? (unexplored district)"
         lines.append(f"[{z.id}] {title}{status}")
+        if z.id in s.cleared and s.here not in z.members:
+            # cleared districts collapse to keep the growing map legible
+            lines.append(f"  ({len(vis)} module(s) mapped - 'buzz edges "
+                         f"{z.id}' for detail)")
+            lines.append("")
+            continue
         if vis:
             row = []
             for m in sorted(vis, key=lambda m: -world.modules[m].pagerank):
@@ -212,7 +218,10 @@ def render_status(world: World, s: Session) -> str:
         + (f" (+{min(50, 5 * s.streak)}% XP on the next clean solve)"
            if s.streak else " (first-try, hint-free solves build a bonus)"),
         f"abilities: {', '.join(s.abilities) or 'none yet'}",
-        f"boss lair: {'OPEN' if s.boss_open else 'sealed'}",
+        "boss lair: " + (
+            "CLEARED" if (boss_qs := [q for q in world.questions.values() if q.boss])
+            and all(q.id in s.resolved for q in boss_qs)
+            else "OPEN" if s.boss_open else "sealed"),
     ]
     if s.victory:
         clearable = {z for z in world.zones
