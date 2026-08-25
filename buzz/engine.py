@@ -123,9 +123,11 @@ def peek(world: World, s: Session, name: str) -> str:
     return m
 
 
-def zone_edges(world: World, zid: str) -> list[str]:
+def zone_edges(world: World, zid: str, s: Session | None = None) -> list[str]:
     """The induced top-level import subgraph of one district, with in-district
-    in-degree tallies - the audit trail behind hub/region/gate quests."""
+    in-degree tallies - the audit trail behind hub/region/gate quests. The
+    tally is withheld while the district's own hub quest is open (it would
+    BE the answer); everywhere else the game does the counting for you."""
     members = set(world.zones[zid].members)
     edges = [e for e in world.edges
              if e.kind == TOP and e.src in members and e.dst in members]
@@ -138,15 +140,27 @@ def zone_edges(world: World, zid: str) -> list[str]:
     cross = [e for e in world.edges
              if e.kind == TOP and (e.src in members) != (e.dst in members)]
     if cross:
-        lines.append("cross-district edges touching it (answers often route "
-                     "through these):")
+        lines.append("cross-district edges touching it (all top-level; "
+                     "answers often route through these):")
         zone_of = {m: world.modules[m].zone for m in world.modules}
         for e in sorted(cross, key=lambda e: (e.src, e.dst)):
             if e.src in members:
                 lines.append(f"  {e.src} -> {e.dst} [{zone_of.get(e.dst, '?')}]")
             else:
                 lines.append(f"  {e.src} [{zone_of.get(e.src, '?')}] -> {e.dst}")
-    lines.append("(the tallying is on you)")
+    hub_open = s is not None and any(
+        q.qtype == "hub" and q.zone == zid and q.id not in s.resolved
+        for q in world.questions.values())
+    if hub_open:
+        lines.append("(in-degree tally withheld: this district's hub quest "
+                     "is still open - that count IS the answer)")
+    elif edges:
+        indeg: dict[str, int] = {}
+        for e in edges:
+            indeg[e.dst] = indeg.get(e.dst, 0) + 1
+        top = sorted(indeg.items(), key=lambda kv: (-kv[1], kv[0]))
+        lines.append("in-district in-degree tally: "
+                     + ", ".join(f"{m} ({n})" for m, n in top))
     return lines
 
 
@@ -207,11 +221,15 @@ def _explain(world: World, q: Question) -> str:
             return f"the blast radius of {t['target']}: " + "; ".join(parts)
         return f"the blast radius of {t['target']} is: {', '.join(t['region'])}"
     if q.qtype == "hub":
+        doc = world.modules[t["module"]].doc
         return (f"{t['module']} is the load-bearing wall - imported top-level "
-                f"by {t['count']} modules of its own district")
+                f"by {t['count']} modules of its own district"
+                + (f' ("{doc}")' if doc else ""))
     if q.qtype == "gate":
+        doc = world.modules[t["module"]].doc
         return (f"{t['module']} is the gate: every top-level route from "
-                f"{t['a']} to {t['b']} passes through it")
+                f"{t['a']} to {t['b']} passes through it"
+                + (f' ("{doc}")' if doc else ""))
     if q.qtype == "ghost":
         return (f"{t['src']} secretly co-changes with {t['best']} "
                 f"({t['shared']} shared commits, zero imports between them)")
@@ -452,13 +470,21 @@ def _post_answer(world: World, s: Session, q: Question) -> None:
         if remaining:
             s.log.append(f"the hive's heart is yours, but {len(remaining)} "
                          f"district(s) remain unmapped - the campaign continues")
+    # Campaign arc: victory lands while the game is still fresh - the boss
+    # plus a meaningful share of districts, not a full-clear grind. What
+    # remains is explicit endgame, open for anyone who wants 100%.
     clearable = {z for z in world.zones
                  if any(x.zone == z and not x.boss
                         for x in world.questions.values())}
-    all_cleared = clearable <= set(s.cleared)
-    if (boss_down or not boss_qs) and all_cleared and world.questions and not s.victory:
+    need = min(3, len(clearable))
+    if ((boss_down or not boss_qs) and len(s.cleared) >= need
+            and world.questions and not s.victory):
         s.victory = True
-        s.log.append("victory: the hive is mapped")
+        left = len(clearable) - len([z for z in s.cleared if z in clearable])
+        s.log.append("victory: the campaign is complete")
+        if left > 0:
+            s.log.append(f"{left} district(s) remain as endgame - the hive "
+                         f"stays open, or take your wings to another repo")
 
 
 def hint(world: World, s: Session, qid: str) -> tuple[int, str]:

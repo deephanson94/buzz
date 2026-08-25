@@ -464,37 +464,56 @@ def generate_questions(world: World) -> None:
             if q.boss:
                 q.prompt = "[BOSS] " + q.prompt
 
-    # rotate the quest mix so districts play differently (template fatigue
-    # was the top playtest complaint); cycle quests always try first since
-    # they carry the ability unlock and only exist where lazy edges do
+    # rotate the quest mix so districts play differently, and cap the
+    # most repetition-prone types GLOBALLY - a recipe learned once should
+    # not be re-run in every district (top playtest complaint)
+    def count(qt: str) -> int:
+        return sum(1 for q in world.questions.values() if q.qtype == qt)
+
+    CAPS = {"cycle": 2, "region": 3, "hub": 2, "ghost": 4, "gate": 3}
+
+    def capped(qt: str) -> bool:
+        return count(qt) >= CAPS.get(qt, 99)
+
     for z in sorted(world.zones.values(), key=lambda z: z.order):
-        n = gen_cycle(world, Gtop, z.id, used=used)
+        n = 0
+        if not capped("cycle"):  # carries the ability unlock, so tried first
+            n += gen_cycle(world, Gtop, z.id, used=used)
         mix = z.order % 3
         if mix == 0:
             n += gen_walk(world, Gtop, z.id, count=2, used=used)
-            n += gen_region(world, Gtop, z.id, used=used)
-            n += gen_ghost(world, z.id, used=used)
-            n += gen_hub(world, Gtop, z.id, used=used)
+            if not capped("region"):
+                n += gen_region(world, Gtop, z.id, used=used)
+            if not capped("ghost"):
+                n += gen_ghost(world, z.id, used=used)
+            if not capped("hub"):
+                n += gen_hub(world, Gtop, z.id, used=used)
         elif mix == 1:
             n += gen_walk(world, Gtop, z.id, count=1, used=used)
-            n += gen_gate(world, Gtop, z.id, used=used)
-            n += gen_ghost(world, z.id, used=used)
+            if not capped("gate"):
+                n += gen_gate(world, Gtop, z.id, used=used)
+            if not capped("ghost"):
+                n += gen_ghost(world, z.id, used=used)
             n += gen_elder(world, z.id, used=used)
             n += gen_place(world, Gfull, z.id, used=used)
         else:
             n += gen_detour(world, Gtop, z.id, used=used)
-            n += gen_region(world, Gtop, z.id, used=used)
-            n += gen_gate(world, Gtop, z.id, used=used)
+            if not capped("region"):
+                n += gen_region(world, Gtop, z.id, used=used)
+            if not capped("gate"):
+                n += gen_gate(world, Gtop, z.id, used=used)
             n += gen_hotspot(world, z.id, used=used)
-            n += gen_hub(world, Gtop, z.id, used=used)
+            if not capped("hub"):
+                n += gen_hub(world, Gtop, z.id, used=used)
             if n < 3:
                 n += gen_walk(world, Gtop, z.id, count=1, used=used)
-        # top up thin zones only - if every district got every type, the
-        # variety rotation would collapse back into uniformity
+        # top up thin zones only
         if n < 4:
             n += gen_elder(world, z.id, used=used)
         if n < 4:
-            gen_hotspot(world, z.id, used=used)
+            n += gen_hotspot(world, z.id, used=used)
+        if n < 3:
+            gen_walk(world, Gtop, z.id, count=1, used=used)
         if n < 3:  # thin zone: top up so it stays clearable and worthwhile
             n += gen_walk(world, Gtop, z.id, count=1, used=used)
             n += gen_place(world, Gfull, z.id, used=used)

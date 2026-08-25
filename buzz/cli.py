@@ -6,8 +6,16 @@ the game is discoverable move by move (humans and agents alike).
 from __future__ import annotations
 
 import os
+import signal
 import sys
 from pathlib import Path
+
+# players pipe output through head/less constantly; a closed pipe is not an
+# error worth a traceback
+try:
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+except (AttributeError, ValueError):
+    pass
 
 from . import engine, render
 from .model import World, Session
@@ -116,7 +124,7 @@ def main(argv: list[str] | None = None) -> None:
         elif cmd == "edges":
             zid = (engine.resolve_zone(world, " ".join(rest)) if rest
                    else world.modules[s.here].zone)
-            print("\n".join(engine.zone_edges(world, zid)))
+            print("\n".join(engine.zone_edges(world, zid, s)))
         elif cmd == "go":
             if not rest:
                 raise GameError("usage: buzz go <module>")

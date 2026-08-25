@@ -43,6 +43,7 @@ class Module:
     in_degree: int = 0
     out_degree: int = 0
     born: str = ""            # date of first commit touching this file
+    doc: str = ""             # first line of the module docstring
 
 
 @dataclass

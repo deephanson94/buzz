@@ -313,8 +313,15 @@ def analyze(repo: Path) -> World:
 
     for d, p in files.items():
         n = names[d]
+        doc = ""
         try:
-            loc = sum(1 for _ in p.open(encoding="utf-8", errors="replace"))
+            text = p.read_text(encoding="utf-8", errors="replace")
+            loc = text.count("\n") + 1
+            try:
+                ds = ast.get_docstring(ast.parse(text))
+                doc = (ds or "").strip().splitlines()[0][:90] if ds else ""
+            except SyntaxError:
+                pass
         except OSError:
             loc = 0
         world.modules[n] = Module(
@@ -322,7 +329,7 @@ def analyze(repo: Path) -> World:
             loc=loc, commits=churn.get(n, 0), authors=len(authors.get(n, ())),
             pagerank=round(pr.get(n, 0.0), 6), betweenness=round(btw.get(n, 0.0), 6),
             in_degree=G.in_degree(n), out_degree=G.out_degree(n),
-            born=born.get(n, ""),
+            born=born.get(n, ""), doc=doc,
         )
     world.edges = [Edge(s, t, k) for (s, t), k in sorted(edges.items())]
 

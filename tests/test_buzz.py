@@ -228,8 +228,9 @@ def test_victory_two_stage(world):
     engine._post_answer(world, s, remaining[0])
     clearable = {z for z in world.zones
                  if any(x.zone == z and not x.boss for x in world.questions.values())}
-    if not (clearable <= set(s.cleared)):
-        assert not s.victory, "boss down must not end the game while zones remain"
+    need = min(3, len(clearable))
+    if len(s.cleared) < need:
+        assert not s.victory, "boss down alone must not end the campaign"
     for q in world.questions.values():
         s.resolved[q.id] = "correct"
     engine._post_answer(world, s, remaining[0])
