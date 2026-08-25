@@ -234,3 +234,72 @@ def test_victory_two_stage(world):
         s.resolved[q.id] = "correct"
     engine._post_answer(world, s, remaining[0])
     assert s.victory
+
+
+def test_region_retry_flow(world):
+    regions = [q for q in world.questions.values()
+               if q.qtype == "region" and len(q.truth["region"]) >= 2]
+    if not regions:
+        pytest.skip("no multi-member region in fixture")
+    q = regions[0]
+    s = engine.new_session(world)
+    truth = q.truth["region"]
+    near_miss = truth[:-1] + ["__NOPE__"]
+    near_miss = [m for m in near_miss if m in world.modules] or truth[:-1]
+    r1 = engine.answer(world, s, q.id, "region", near_miss)
+    assert r1.get("retry") and q.id not in s.resolved
+    assert "missed:" not in r1["note"]          # counts only, no names
+    r2 = engine.answer(world, s, q.id, "region", truth)
+    assert r2["correct"]
+    assert r2["gained"] < q.xp                  # retry discount applied
+
+
+def test_rank_monotonic(world):
+    s = engine.new_session(world)
+    prev = engine.rank(world, s)
+    order = ["Egg", "Larva", "Worker", "Forager", "Royal Guard", "Queen Bee"]
+    for q in world.questions.values():
+        s.xp += q.xp
+        s.max_xp += q.xp * 2   # poor accuracy must not demote
+        cur = engine.rank(world, s)
+        assert order.index(cur) >= order.index(prev)
+        prev = cur
+
+
+def test_scout_reveals_names_only(world):
+    s = engine.new_session(world)
+    zid = next(iter(world.zones))
+    engine.scout(world, s, zid)
+    for m in world.zones[zid].members:
+        assert m in s.seen
+        assert m == s.here or m not in s.discovered
+
+
+def test_reveal_prompt_modules_no_answer_leak(world):
+    s = engine.new_session(world)
+    for q in world.questions.values():
+        before = set(s.seen)
+        engine.reveal_prompt_modules(world, s, q)
+        leaked = set(s.seen) - before
+        if q.qtype == "hub":
+            assert q.truth["module"] not in leaked
+        if q.qtype == "walk":
+            interior = set(q.truth["example"][1:-1])
+            assert not (leaked & interior)
+
+
+def test_gate_accepts_any_cut_vertex():
+    # gate questions need a bigger graph than the fixture; verify the
+    # point-verb accept-list logic directly instead
+    from buzz.model import World, Question, Module, Zone
+    w = World(repo="x", sha="y")
+    for n in ("a", "g", "b"):
+        w.modules[n] = Module(name=n, path=n, zone="z1")
+    w.zones["z1"] = Zone(id="z1", name="Z", members=["a", "g", "b"])
+    w.questions["q1"] = Question(
+        id="q1", zone="z1", qtype="gate", verb="point", prompt="",
+        truth={"a": "a", "b": "b", "module": "g", "accepted": ["g"]}, xp=10)
+    from buzz.model import Session
+    s = Session(here="a", discovered=["a"], seen=["a"])
+    r = engine.answer(w, s, "q1", "point", ["g"])
+    assert r["correct"]

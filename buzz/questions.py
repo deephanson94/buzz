@@ -103,7 +103,9 @@ def gen_region(world: World, G: nx.DiGraph, zone_id: str, boss: bool = False,
     _q(world, zone_id, "region", "region",
        f"Blast radius. You are changing {x}'s public API. Select every module in "
        f"{world.zones[zone_id].name} that could break - everything that imports {x} "
-       f"directly or through a chain. {EDGE_RULE} "
+       f"directly or through a chain. {EDGE_RULE} A chain may pass through "
+       f"modules OUTSIDE the candidate list (even other zones) - the "
+       f"candidates are only what you select from. "
        f"Candidates: {', '.join(sorted(zone.members))}.",
        {"target": x, "region": sorted(importers), "why": why},
        xp=(10 + 5 * len(importers)) * mult, distance=1 + depth, boss=boss)
@@ -134,7 +136,8 @@ def gen_boss_reach(world: World, G: nx.DiGraph, boss: str, used: set) -> int:
        f"modules MUST load successfully for that import to complete? "
        f"{boss} touches all of them - but modules it reaches only through "
        f"sealed tunnels (function-level imports) or type-hints do NOT load "
-       f"at import time. Select the ones that do. "
+       f"at import time. Select the ones that do. A loading chain may pass "
+       f"through modules outside this list - check every hop. "
        f"Candidates: {', '.join(cands)}.",
        {"target": boss, "region": sorted(picks), "why": why},
        xp=(10 + 5 * len(picks)) * BOSS_XP_MULT, distance=len(cands), boss=True)
@@ -194,15 +197,24 @@ def gen_ghost(world: World, zone_id: str, boss: bool = False,
         accepted = [o for o, _ in partners[:3]]
         topn = partners[0][1]
         mult = BOSS_XP_MULT if boss else 1
+        # a bounded suspect list turns this into hypothesis-testing with
+        # probe, not blind enumeration of the whole hive
+        decoys = [m for m in sorted(
+            world.modules, key=lambda m: -world.modules[m].commits)
+            if m != x and m not in accepted
+            and not world.has_edge(x, m) and not world.has_edge(m, x)][:4]
+        suspects = sorted([accepted[0]] + decoys)
         _q(world, zone_id, "ghost", "edge",
            f"Ghost edge. No import statement of ANY kind (top-level, "
            f"function-level, or type-hint) connects {x} to it in either "
            f"direction, yet git says they change together constantly ({topn}+ "
            f"shared focused commits) - hidden coupling the import graph cannot "
-           f"see. Investigate with 'buzz probe {x} <candidate>' to compare "
-           f"co-change counts, then draw the ghost edge: "
+           f"see. Suspects: {', '.join(suspects)}. Investigate with "
+           f"'buzz probe {x} <suspect>' and reason about which one would HAVE "
+           f"to move when {x} moves, then draw the ghost edge: "
            f"answer edge {x} <your-guess>.",
-           {"src": x, "accepted": accepted, "best": partners[0][0], "shared": topn},
+           {"src": x, "accepted": accepted, "best": partners[0][0],
+            "shared": topn, "suspects": suspects},
            xp=20 * mult, distance=2, boss=boss)
         return 1
     return 0
@@ -259,6 +271,53 @@ def gen_place(world: World, G: nx.DiGraph, zone_id: str,
     return 0
 
 
+def gen_gate(world: World, G: nx.DiGraph, zone_id: str,
+             used: set | None = None) -> int:
+    """Chokepoint: a pair (a, b) whose every top-level import route runs
+    through one module. Point at the gate. Any module whose removal cuts
+    a off from b is accepted."""
+    zone = world.zones[zone_id]
+    used = used if used is not None else set()
+    if _sig("gate", zone_id) in used:
+        return 0
+    cands = sorted(zone.members, key=lambda m: -world.modules[m].betweenness)
+    for g in cands[:5]:
+        if not G.has_node(g) or world.modules[g].betweenness == 0:
+            continue
+        ups = [m for m in zone.members if m != g and nx.has_path(G, m, g)]
+        downs = [m for m in zone.members if m != g and nx.has_path(G, g, m)]
+        for a in sorted(ups, key=lambda m: -world.modules[m].commits):
+            for b in sorted(downs, key=lambda m: -world.modules[m].in_degree):
+                if a == b or not nx.has_path(G, a, b):
+                    continue
+                H = G.copy()
+                H.remove_node(g)
+                if nx.has_path(H, a, b):
+                    continue  # g is not actually a chokepoint for this pair
+                dist = nx.shortest_path_length(G, a, b)
+                if dist < 2:
+                    continue
+                # accept ANY node whose removal cuts a off from b
+                accepted = []
+                for c in nx.shortest_path(G, a, b)[1:-1]:
+                    H2 = G.copy()
+                    H2.remove_node(c)
+                    if not nx.has_path(H2, a, b):
+                        accepted.append(c)
+                if not accepted:
+                    continue
+                used.add(_sig("gate", zone_id))
+                _q(world, zone_id, "gate", "point",
+                   f"The gate. Every top-level import route from {a} to {b} "
+                   f"squeezes through a single chokepoint - remove that one "
+                   f"module and {a} loses {b} entirely. Point at the "
+                   f"chokepoint: answer point <module>.",
+                   {"a": a, "b": b, "module": g, "accepted": sorted(set(accepted))},
+                   xp=10 * (dist + 1), distance=dist + 1)
+                return 1
+    return 0
+
+
 def generate_questions(world: World) -> None:
     Gtop = top_graph(world)
     Gfull = full_graph(world)
@@ -286,15 +345,32 @@ def generate_questions(world: World) -> None:
             if q.boss:
                 q.prompt = "[BOSS] " + q.prompt
 
+    # rotate the quest mix so districts play differently (template fatigue
+    # was the top playtest complaint); cycle quests always try first since
+    # they carry the ability unlock and only exist where lazy edges do
     for z in sorted(world.zones.values(), key=lambda z: z.order):
-        n = 0
-        n += gen_cycle(world, Gtop, z.id, used=used)
-        n += gen_walk(world, Gtop, z.id, count=2, used=used)
-        n += gen_region(world, Gtop, z.id, used=used)
-        n += gen_ghost(world, z.id, used=used)
-        n += gen_hub(world, Gtop, z.id, used=used)
-        if n < MAX_PER_ZONE:
-            gen_place(world, Gfull, z.id, used=used)
+        n = gen_cycle(world, Gtop, z.id, used=used)
+        mix = z.order % 3
+        if mix == 0:
+            n += gen_walk(world, Gtop, z.id, count=2, used=used)
+            n += gen_region(world, Gtop, z.id, used=used)
+            n += gen_ghost(world, z.id, used=used)
+            n += gen_hub(world, Gtop, z.id, used=used)
+        elif mix == 1:
+            n += gen_walk(world, Gtop, z.id, count=1, used=used)
+            n += gen_gate(world, Gtop, z.id, used=used)
+            n += gen_ghost(world, z.id, used=used)
+            n += gen_place(world, Gfull, z.id, used=used)
+            n += gen_hub(world, Gtop, z.id, used=used)
+        else:
+            n += gen_walk(world, Gtop, z.id, count=1, used=used)
+            n += gen_region(world, Gtop, z.id, used=used)
+            n += gen_gate(world, Gtop, z.id, used=used)
+            n += gen_hub(world, Gtop, z.id, used=used)
+        if n < 3:  # thin zone: top up so it stays clearable and worthwhile
+            n += gen_walk(world, Gtop, z.id, count=1, used=used)
+            n += gen_place(world, Gfull, z.id, used=used)
+            gen_ghost(world, z.id, used=used)
 
 
 def make_followup(world: World, q: Question, n_existing: int) -> dict | None:

@@ -98,6 +98,19 @@ def go(world: World, s: Session, name: str) -> str:
     return how
 
 
+def scout(world: World, s: Session, zone_name: str) -> int:
+    """Send a scout over a district: reveals the NAMES of its modules (they
+    become seen/travelable) but none of their edges - you still have to fly
+    there and read the files. Free, like all exploration."""
+    zid = resolve_zone(world, zone_name)
+    added = 0
+    for m in world.zones[zid].members:
+        if m not in s.seen:
+            s.seen.append(m)
+            added += 1
+    return added
+
+
 def get_question(world: World, s: Session, qid: str) -> Question:
     if qid in world.questions:
         return world.questions[qid]
@@ -114,9 +127,14 @@ def question_open(world: World, s: Session, q: Question) -> tuple[bool, str]:
     return True, ""
 
 
+RETRY_COST = 0.3      # XP fraction forfeited per extra region attempt
+MAX_RETRIES = 2
+
+
 def _award(s: Session, q: Question, frac: float) -> int:
     hint_frac = HINT_COST.get(s.hints.get(q.id, 0), 0.0)
-    gained = max(0, int(round(q.xp * frac * (1 - hint_frac))))
+    retry_frac = min(1.0, RETRY_COST * s.tries.get(q.id, 0))
+    gained = max(0, int(round(q.xp * frac * (1 - hint_frac) * (1 - retry_frac))))
     s.xp += gained
     s.max_xp += q.xp
     return gained
@@ -135,6 +153,9 @@ def _explain(world: World, q: Question) -> str:
     if q.qtype == "hub":
         return (f"{t['module']} is the load-bearing wall - imported top-level "
                 f"by {t['count']} modules of its own district")
+    if q.qtype == "gate":
+        return (f"{t['module']} is the gate: every top-level route from "
+                f"{t['a']} to {t['b']} passes through it")
     if q.qtype == "ghost":
         return (f"{t['src']} secretly co-changes with {t['best']} "
                 f"({t['shared']} shared commits, zero imports between them)")
@@ -194,12 +215,29 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
     elif q.verb == "region":
         picks = {resolve_module(world, x) for x in args}
         truth_set = set(t["region"])
+        jac = 1.0
         if picks == truth_set:
             correct = True
         else:
             inter = picks & truth_set
             union = picks | truth_set
             jac = len(inter) / len(union) if union else 0
+            # near miss + retries left: counts-only feedback, patch and
+            # resubmit at an XP discount - one missed hop should not erase
+            # an otherwise-correct reading of the graph
+            if jac >= 0.4 and s.tries.get(q.id, 0) < MAX_RETRIES:
+                s.tries[q.id] = s.tries.get(q.id, 0) + 1
+                return {"q": q, "correct": False, "partial": False,
+                        "retry": True, "gained": 0, "followup": None,
+                        "explain": "",
+                        "note": (f"{len(inter)} of your picks are right, "
+                                 f"{len(picks - truth_set)} are wrong, and "
+                                 f"{len(truth_set - picks)} module(s) are "
+                                 f"missing. Patch your selection and resubmit "
+                                 f"(-{int(RETRY_COST*100)}% XP per retry, "
+                                 f"{MAX_RETRIES - s.tries[q.id]} retr"
+                                 f"{'y' if MAX_RETRIES - s.tries[q.id] == 1 else 'ies'}"
+                                 f" left after this one)")}
             missed = sorted(truth_set - picks)
             extra = sorted(picks - truth_set)
             bits = []
@@ -208,7 +246,7 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
             if extra:
                 bits.append(f"safe (not affected): {', '.join(extra)}")
             note = "; ".join(bits)
-            if jac >= 0.5:
+            if jac >= 0.4:
                 partial = True
     elif q.verb == "place":
         z = resolve_zone(world, " ".join(args))
@@ -219,7 +257,8 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
         if len(args) != 1:
             raise GameError("answer point <module>")
         m = resolve_module(world, args[0])
-        correct = m == t["module"]
+        ok_set = set(t.get("accepted") or [t["module"]])
+        correct = m in ok_set
         if not correct:
             note = f"{m} is not the one"
     else:
@@ -255,11 +294,12 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
 def _modules_in_truth(q: Question) -> list[str]:
     t = q.truth
     out = []
-    for key in ("src", "dst", "target", "module", "best"):
+    for key in ("src", "dst", "target", "module", "best", "a", "b"):
         if key in t:
             out.append(t[key])
     out.extend(t.get("example", []))
     out.extend(t.get("region", []))
+    out.extend(t.get("accepted", []) if isinstance(t.get("accepted"), list) else [])
     return out
 
 
@@ -336,6 +376,9 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
             text = f"look at which zone most of {nb}'s neighbors are in"
         elif q.qtype == "hub":
             text = f"it is imported by {t['count']} of its own district"
+        elif q.qtype == "gate":
+            text = (f"walk from {t['a']} toward {t['b']} and watch which "
+                    f"module every route funnels through")
         else:
             text = f"read {t['src']}'s imports"
         s.hints[q.id] = 1
@@ -356,6 +399,13 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
                          key=lambda m: -world.modules[m].in_degree)
             cands = [m for m in top if m != t["module"]][:2] + [t["module"]]
             text = "it is one of: " + ", ".join(sorted(cands))
+        elif q.qtype == "gate":
+            zid = world.modules[t["module"]].zone
+            top = sorted(world.zones[zid].members,
+                         key=lambda m: -world.modules[m].betweenness)
+            cands = [m for m in top
+                     if m not in t.get("accepted", []) and m != t["module"]][:2]
+            text = "it is one of: " + ", ".join(sorted(cands + [t["module"]]))
         else:
             text = f"{t['src']} is the importer"
         s.hints[q.id] = 2
@@ -412,12 +462,46 @@ def coverage(world: World, s: Session) -> tuple[int, int]:
     return len(s.discovered), len(world.modules)
 
 
-def rank(s: Session) -> str:
-    if s.max_xp == 0:
-        return "Egg"
-    r = s.xp / s.max_xp
-    for cut, name in [(0.9, "Queen Bee"), (0.75, "Royal Guard"), (0.5, "Forager"),
-                      (0.25, "Worker"), (0.0, "Larva")]:
+def rank(world: World, s: Session) -> str:
+    """Monotonic: fraction of the world's TOTAL quest XP earned. Earning
+    more can never demote you (accuracy is shown separately in status)."""
+    total = sum(q.xp for q in world.questions.values()) or 1
+    r = s.xp / total
+    for cut, name in [(0.8, "Queen Bee"), (0.6, "Royal Guard"), (0.4, "Forager"),
+                      (0.2, "Worker"), (0.0001, "Larva")]:
         if r >= cut:
             return name
-    return "Larva"
+    return "Egg"
+
+
+LESSONS = {
+    "walk": "transitive top-level chains carry breakage across modules that never name each other",
+    "cycle": "a function-level import is often a deliberate cycle-breaker, not sloppiness",
+    "region": "blast radius = reverse reachability over always-run imports only; chains ignore zone boundaries",
+    "ghost": "git co-change reveals coupling the import graph cannot see",
+    "place": "a module's district is defined by where its import neighbors live",
+    "hub": "in-degree inside a cluster tells you which wall is load-bearing",
+    "gate": "high-betweenness modules are chokepoints: sever one and whole regions go dark",
+    "direction": "always check which side of an import edge a module is on before touching it",
+}
+
+
+def reveal_prompt_modules(world: World, s: Session, q: Question) -> None:
+    """Reading a quest marks the modules its text NAMES as seen (scout
+    reports) - never the answer set itself."""
+    t = q.truth
+    named: list = []
+    if q.qtype in ("walk", "cycle", "direction"):
+        named = [t.get("src"), t.get("dst")]
+    elif q.qtype == "region":
+        named = [t.get("target")] + world.zones[q.zone].members
+    elif q.qtype == "ghost":
+        named = [t.get("src")] + t.get("suspects", [])
+    elif q.qtype == "place":
+        named = [t.get("module")]
+    elif q.qtype == "gate":
+        named = [t.get("a"), t.get("b")]
+    # hub names nothing - pointing at it IS the quest
+    for m in named:
+        if m in world.modules and m not in s.seen:
+            s.seen.append(m)

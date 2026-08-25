@@ -129,6 +129,7 @@ class Session:
     abilities: list[str] = field(default_factory=list)    # e.g. ["tunnel-vision"]
     resolved: dict[str, str] = field(default_factory=dict)  # qid -> correct|partial|revealed
     hints: dict[str, int] = field(default_factory=dict)     # qid -> highest hint level used
+    tries: dict[str, int] = field(default_factory=dict)     # qid -> extra region attempts used
     followups: dict[str, dict] = field(default_factory=dict)  # dynamically spawned questions
     cleared: list[str] = field(default_factory=list)        # zone ids
     boss_open: bool = False

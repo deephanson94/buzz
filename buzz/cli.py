@@ -122,28 +122,47 @@ def main(argv: list[str] | None = None) -> None:
                   + ". 'buzz look' for detail.")
             print(_try_next(world, s))
         elif cmd == "quests":
-            print(render.render_quests(world, s, world.modules[s.here].zone))
+            if rest and rest[0] == "all":
+                for z in sorted(world.zones.values(), key=lambda z: z.order):
+                    print(render.render_quests(world, s, z.id).split("\n")[0])
+                print("\n('buzz quests' in a zone lists its quest ids)")
+            elif rest:
+                print(render.render_quests(world, s, engine.resolve_zone(world, rest[0])))
+            else:
+                print(render.render_quests(world, s, world.modules[s.here].zone))
         elif cmd == "quest":
             if not rest:
                 raise GameError("usage: buzz quest <id>")
             q = engine.get_question(world, s, rest[0])
+            engine.reveal_prompt_modules(world, s, q)
             print(render.render_question(world, s, q))
+        elif cmd == "scout":
+            if not rest:
+                raise GameError("usage: buzz scout <zone-id-or-name>")
+            n = engine.scout(world, s, " ".join(rest))
+            print(f"your scouts report back: {n} new module name(s) on the map "
+                  f"(names only - fly there to read their imports)")
         elif cmd == "answer":
             if len(rest) < 3:
                 raise GameError("usage: buzz answer <id> <walk|edge|region|place> ...")
             qid, verb, params = rest[0], rest[1], rest[2:]
             pre_log = len(s.log)
             r = engine.answer(world, s, qid, verb, params)
-            if r["correct"]:
+            lesson = engine.LESSONS.get(r["q"].qtype)
+            if r.get("retry"):
+                print(f"NEARLY. {r['note']}")
+            elif r["correct"]:
                 print(f"CORRECT! +{r['gained']} XP  ({r['explain']})")
             elif r["partial"]:
-                print(f"CLOSE - half credit, +{r['gained']} XP. {r['note']}")
+                print(f"CLOSE - partial credit, +{r['gained']} XP. {r['note']}")
                 print(f"the truth: {r['explain']}")
             else:
                 print(f"WRONG - but knowledge is never wasted. {r['note']}")
                 print(f"the truth: {r['explain']}")
                 if r["followup"]:
                     print(f"a follow-up quest appeared: buzz quest {r['followup']}")
+            if lesson and not r.get("retry"):
+                print(f"(lesson: {lesson})")
             for ev in s.log[pre_log:]:
                 print(f">>> {ev.upper()} <<<")
             if s.victory:

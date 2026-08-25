@@ -1,8 +1,17 @@
 """Text rendering: the fog-of-war map IS the architecture diagram."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from .model import World, Session, ROLE_GLYPH, LAZY, TYPE
 from .engine import coverage, rank, boss_needed, TUNNEL
+
+
+def masked_modules(world: World, s: Session) -> set[str]:
+    """Modules whose district must stay hidden: subject of an open place
+    quest (otherwise walking there reads the answer off the map)."""
+    return {q.truth["module"] for q in world.questions.values()
+            if q.qtype == "place" and q.id not in s.resolved}
 
 
 def _mod_label(world: World, s: Session, m: str) -> str:
@@ -14,15 +23,19 @@ def _mod_label(world: World, s: Session, m: str) -> str:
 
 def render_map(world: World, s: Session) -> str:
     d, total = coverage(world, s)
+    masked = masked_modules(world, s)
+    here_zone = ("??? (unplaced)" if s.here in masked
+                 else f"zone {world.modules[s.here].zone}, "
+                      f"{world.zones[world.modules[s.here].zone].name}")
     lines = [
         f"=== THE HIVE: {world.repo.rsplit('/', 1)[-1]} "
-        f"| coverage {d}/{total} modules | XP {s.xp} | rank {rank(s)} ===",
-        f"you are at: {s.here}  (zone {world.modules[s.here].zone}, "
-        f"{world.zones[world.modules[s.here].zone].name})",
+        f"| coverage {d}/{total} modules | XP {s.xp} | rank {rank(world, s)} ===",
+        f"you are at: {s.here}  ({here_zone})",
         "",
     ]
+    unplaced = sorted(m for m in masked if m in s.seen)
     for z in sorted(world.zones.values(), key=lambda z: z.order):
-        vis = [m for m in z.members if m in s.seen]
+        vis = [m for m in z.members if m in s.seen and m not in masked]
         zq = [q for q in world.questions.values() if q.zone == z.id and not q.boss]
         done = sum(1 for q in zq if q.id in s.resolved)
         status = " *CLEARED*" if z.id in s.cleared else f"  quests {done}/{len(zq)}"
@@ -38,6 +51,10 @@ def render_map(world: World, s: Session) -> str:
         if hidden:
             lines.append(f"  ... and {hidden} module(s) under fog")
         lines.append("")
+    if unplaced:
+        lines.append("unplaced sightings (district unknown until a scout "
+                     "places them): " + ", ".join(unplaced))
+        lines.append("")
     if not s.boss_open:
         lines.append(f"(boss quests are sealed until {boss_needed(world)} zones are cleared)")
     else:
@@ -45,17 +62,51 @@ def render_map(world: World, s: Session) -> str:
     return "\n".join(lines)
 
 
+def _source_peek(world: World, m) -> list[str]:
+    """A glimpse of the actual code: first docstring line + real import
+    lines. The game should teach what the code does, not just its shape."""
+    try:
+        text = (Path(world.repo) / m.path).read_text(encoding="utf-8",
+                                                     errors="replace")
+    except OSError:
+        return []
+    lines = []
+    for i, raw in enumerate(text.splitlines()[:3], 1):
+        t = raw.strip()
+        if t.startswith(('"""', "'''", '#')):
+            lines.append(f'  {t.strip(chr(34) + chr(39) + "# ")[:76]}')
+            break
+    # column-0 lines only: indented (function-level / TYPE_CHECKING) imports
+    # stay hidden, same as the fog rules
+    imports = [f"  {i}: {raw[:76]}"
+               for i, raw in enumerate(text.splitlines(), 1)
+               if raw.startswith(("import ", "from "))][:10]
+    if imports:
+        lines.append("  top-of-file import lines (verbatim):")
+        lines.extend("  " + ln for ln in imports)
+    return lines
+
+
 def render_look(world: World, s: Session) -> str:
     m = world.modules[s.here]
     z = world.zones[m.zone]
+    zone_line = ("zone: ??? - a scout must place this module (see its "
+                 "place quest)" if s.here in masked_modules(world, s)
+                 else f"zone: {z.name} ({z.id}) | role: {m.role}")
     lines = [
         f"--- {s.here} ---",
         f"file: {m.path} | {m.loc} lines | {m.commits} commits by {m.authors} author(s)",
-        f"zone: {z.name} ({z.id}) | role: {m.role}",
+        zone_line,
         f"imported by {m.in_degree} module(s)"
         + (": " + ", ".join(sorted(e.src for e in world.in_edges(s.here) if e.src in s.discovered))
            + (" +unknown others" if any(e.src not in s.discovered for e in world.in_edges(s.here)) else "")
            if m.in_degree else ""),
+    ]
+    peek = _source_peek(world, m)
+    if peek:
+        lines.append("")
+        lines.extend(peek)
+    lines += [
         "",
         "imports (its out-edges - you can walk these with 'buzz go <name>'):",
     ]
@@ -85,7 +136,10 @@ def render_quests(world: World, s: Session, zone_id: str) -> str:
     z = world.zones[zone_id]
     qs = [q for q in world.questions.values() if q.zone == zone_id]
     fus = [q for q in s.followups.values() if q["zone"] == zone_id]
-    lines = [f"quests in {z.name} ({z.id}):"]
+    nb = [q for q in qs if not q.boss]
+    done = sum(1 for q in nb if q.id in s.resolved)
+    lines = [f"quests in {z.name} ({z.id}) - {done}/{len(nb)} resolved"
+             + (" *CLEARED*" if zone_id in s.cleared else "") + ":"]
     for q in sorted(qs, key=lambda q: (q.boss, q.id)):
         lock = ""
         if q.boss and not s.boss_open:
@@ -116,8 +170,11 @@ def render_question(world: World, s: Session, q) -> str:
 def render_status(world: World, s: Session) -> str:
     d, total = coverage(world, s)
     solved = sum(1 for v in s.resolved.values() if v == "correct")
+    total_xp = sum(q.xp for q in world.questions.values())
     lines = [
-        f"XP {s.xp}/{s.max_xp} attempted | rank: {rank(s)}",
+        f"XP {s.xp} of {total_xp} in the hive | rank: {rank(world, s)} "
+        f"(rank only ever climbs)"
+        + (f" | accuracy so far: {s.xp}/{s.max_xp}" if s.max_xp else ""),
         f"coverage: {d}/{total} modules discovered",
         f"zones cleared: {len(s.cleared)}/{len(world.zones)}"
         + (f" ({', '.join(world.zones[z].name for z in s.cleared)})" if s.cleared else ""),
@@ -129,7 +186,8 @@ def render_status(world: World, s: Session) -> str:
     ]
     if s.victory:
         lines.append("")
-        lines.append("*** VICTORY - the hive is mapped. Final rank: " + rank(s) + " ***")
+        lines.append("*** VICTORY - the hive is mapped. Final rank: "
+                     + rank(world, s) + " ***")
     if s.log:
         lines.append("")
         lines.append("recent events: " + "; ".join(s.log[-3:]))
@@ -150,6 +208,8 @@ exploring (free, no XP):
                                see on the map
   buzz probe <a> <b>           how are two modules related? shows import
                                edges (and their kind) + git co-change count
+  buzz scout <zone>            reveal a district's module NAMES (not edges)
+  buzz quests all              one-line progress for every district
 
 quests (the only source of XP):
   buzz quests                  quests in your current zone
