@@ -428,6 +428,10 @@ def gen_patch(world: World, zone_id: str, used: set | None = None) -> int:
             continue
         if ev["subject"].lower().startswith(BORING):
             continue  # version-bump ceremony teaches nothing
+        subj = ev["subject"].lower().replace("_", "")
+        if any(mod.split(".")[-1].strip("_").replace("_", "") in subj
+               for mod in (a, b)):
+            continue  # the subject names a module - the answer would leak
         # anchor the quest in this zone via either module
         for m, other in ((a, b), (b, a)):
             if world.modules[m].zone != zone_id or m == other:
