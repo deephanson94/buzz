@@ -485,8 +485,10 @@ def generate_questions(world: World) -> None:
     def count(qt: str) -> int:
         return sum(1 for q in world.questions.values() if q.qtype == qt)
 
-    CAPS = {"cycle": 2, "region": 3, "hub": 2, "ghost": 4, "gate": 3,
-            "place": 4, "elder": 3, "hotspot": 3}
+    # generous caps: the bracketing gate (buzz calibrate) prunes shallow
+    # and broken questions afterward, so generation should run wide
+    CAPS = {"cycle": 2, "region": 5, "hub": 2, "ghost": 6, "gate": 5,
+            "place": 4, "elder": 4, "hotspot": 4}
 
     def capped(qt: str) -> bool:
         return count(qt) >= CAPS.get(qt, 99)
@@ -497,7 +499,7 @@ def generate_questions(world: World) -> None:
             n += gen_cycle(world, Gtop, z.id, used=used)
         mix = z.order % 3
         if mix == 0:
-            n += gen_walk(world, Gtop, z.id, count=2, used=used)
+            n += gen_walk(world, Gtop, z.id, count=3, used=used)
             if not capped("region"):
                 n += gen_region(world, Gtop, z.id, used=used)
             if not capped("ghost"):

@@ -41,6 +41,10 @@ def anchor_files(world: World, q: Question) -> list[str]:
 def export(world: World) -> list[dict]:
     out = []
     for q in world.questions.values():
+        if q.qtype == "place":
+            # place answers are zone ids - game vocabulary solvers don't
+            # have; they can't be judged fairly, so they are auto-kept
+            continue
         syntax = {
             "walk": f"walk <module> <module> ...",
             "edge": f"edge <importer-or-elder> <imported-or-newcomer>",
