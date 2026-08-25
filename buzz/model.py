@@ -85,6 +85,8 @@ class World:
     zones: dict[str, Zone] = field(default_factory=dict)
     questions: dict[str, Question] = field(default_factory=dict)
     cochange: dict[str, list] = field(default_factory=dict)  # name -> [[other, shared], ...]
+    events: list = field(default_factory=list)    # focused 2-module commits
+    reverts: list = field(default_factory=list)   # reverted changes
     start: str = ""
 
     def out_edges(self, name: str) -> list[Edge]:
@@ -106,6 +108,8 @@ class World:
             "zones": {k: asdict(v) for k, v in self.zones.items()},
             "questions": {k: asdict(v) for k, v in self.questions.items()},
             "cochange": self.cochange,
+            "events": self.events,
+            "reverts": self.reverts,
         }
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=1))
@@ -119,6 +123,8 @@ class World:
         w.zones = {k: Zone(**v) for k, v in d["zones"].items()}
         w.questions = {k: Question(**v) for k, v in d["questions"].items()}
         w.cochange = d["cochange"]
+        w.events = d.get("events", [])
+        w.reverts = d.get("reverts", [])
         return w
 
 
@@ -135,6 +141,7 @@ class Session:
     tries: dict[str, int] = field(default_factory=dict)     # qid -> extra region attempts used
     followups: dict[str, dict] = field(default_factory=dict)  # dynamically spawned questions
     cleared: list[str] = field(default_factory=list)        # zone ids
+    streak: int = 0             # consecutive first-try, hint-free solves
     boss_open: bool = False
     victory: bool = False
     log: list[str] = field(default_factory=list)

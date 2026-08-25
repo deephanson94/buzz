@@ -409,6 +409,84 @@ def gen_hotspot(world: World, zone_id: str, used: set | None = None) -> int:
     return 1
 
 
+def gen_patch(world: World, zone_id: str, used: set | None = None) -> int:
+    """Tier-1 diff comprehension: a real historical commit touched exactly
+    two modules. Given the commit subject and one of them, point at the
+    module that had to move with it. Prefers surprising companions - pairs
+    with no import edge - so the answer teaches change-coupling, not
+    import-following."""
+    zone = world.zones[zone_id]
+    used = used if used is not None else set()
+    if _sig("patch", zone_id) in used:
+        return 0
+    BORING = ("release", "bump", "update version", "prepare", "post release",
+              "changelog", "v0.", "v1.", "v2.")
+    scored = []
+    for ev in world.events:
+        a, b = ev["mods"]
+        if a not in world.modules or b not in world.modules:
+            continue
+        if ev["subject"].lower().startswith(BORING):
+            continue  # version-bump ceremony teaches nothing
+        # anchor the quest in this zone via either module
+        for m, other in ((a, b), (b, a)):
+            if world.modules[m].zone != zone_id or m == other:
+                continue
+            if _sig("patch", *sorted((m, other))) in used:
+                continue
+            surprising = not (world.has_edge(m, other) or world.has_edge(other, m))
+            cross_zone = world.modules[other].zone != zone_id
+            scored.append((surprising, cross_zone, ev, m, other))
+    scored.sort(key=lambda t: (-t[0], -t[1]))
+    if not scored:
+        return 0
+    surprising, _, ev, m, other = scored[0]
+    decoys = [d for d in sorted(world.modules,
+                                key=lambda x: -world.modules[x].commits)
+              if d not in (m, other)][:4]
+    suspects = sorted([other] + decoys)
+    used.add(_sig("patch", zone_id))
+    used.add(_sig("patch", *sorted((m, other))))
+    _q(world, zone_id, "patch", "point",
+       f"A page from the hive's chronicle, {ev['date']}: "
+       f"\"{ev['subject']}\". That patch touched {m} - and exactly ONE "
+       f"other module in the whole hive had to move in the very same "
+       f"commit. Suspects: {', '.join(suspects)}. Point at the companion: "
+       f"answer point <module>.",
+       {"module": other, "anchor": m, "subject": ev["subject"],
+        "date": ev["date"], "suspects": suspects, "surprising": surprising},
+       xp=25, distance=2)
+    return 1
+
+
+def gen_scar(world: World, zone_id: str, used: set | None = None) -> int:
+    """Revert archaeology: a change here was rolled back. Point at the
+    module that bears the scar."""
+    zone = world.zones[zone_id]
+    used = used if used is not None else set()
+    if _sig("scar", zone_id) in used:
+        return 0
+    for ev in world.reverts:
+        mods = [m for m in ev["mods"] if m in world.modules]
+        if not mods:
+            continue
+        m = max(mods, key=lambda x: world.modules[x].commits)
+        if world.modules[m].zone != zone_id or _sig("scar", m) in used:
+            continue
+        used.add(_sig("scar", zone_id))
+        used.add(_sig("scar", m))
+        _q(world, zone_id, "scar", "point",
+           f"The hive remembers a wound. On {ev['date']} a change was "
+           f"ROLLED BACK: \"{ev['subject']}\". Somewhere in "
+           f"{zone.name} stands the module that bears that scar. Dig "
+           f"through the history (git is fair game) and point at it: "
+           f"answer point <module>.",
+           {"module": m, "subject": ev["subject"], "date": ev["date"]},
+           xp=20, distance=2)
+        return 1
+    return 0
+
+
 def gen_gate(world: World, G: nx.DiGraph, zone_id: str,
              used: set | None = None) -> int:
     """Chokepoint: a pair (a, b) whose every top-level import route runs
@@ -492,7 +570,7 @@ def generate_questions(world: World) -> None:
     # generous caps: the bracketing gate (buzz calibrate) prunes shallow
     # and broken questions afterward, so generation should run wide
     CAPS = {"cycle": 2, "region": 5, "hub": 2, "ghost": 6, "gate": 5,
-            "place": 4, "elder": 4, "hotspot": 4}
+            "place": 4, "elder": 4, "hotspot": 4, "patch": 4, "scar": 2}
 
     def capped(qt: str) -> bool:
         return count(qt) >= CAPS.get(qt, 99)
@@ -508,6 +586,8 @@ def generate_questions(world: World) -> None:
                 n += gen_region(world, Gtop, z.id, used=used)
             if not capped("ghost"):
                 n += gen_ghost(world, z.id, used=used)
+            if not capped("patch"):
+                n += gen_patch(world, z.id, used=used)
             if not capped("hub"):
                 n += gen_hub(world, Gtop, z.id, used=used)
         elif mix == 1:
@@ -516,6 +596,8 @@ def generate_questions(world: World) -> None:
                 n += gen_gate(world, Gtop, z.id, used=used)
             if not capped("ghost"):
                 n += gen_ghost(world, z.id, used=used)
+            if not capped("scar"):
+                n += gen_scar(world, z.id, used=used)
             if not capped("elder"):
                 n += gen_elder(world, z.id, used=used)
             if not capped("place"):
@@ -528,6 +610,8 @@ def generate_questions(world: World) -> None:
                 n += gen_gate(world, Gtop, z.id, used=used)
             if not capped("hotspot"):
                 n += gen_hotspot(world, z.id, used=used)
+            if not capped("patch"):
+                n += gen_patch(world, z.id, used=used)
             if not capped("hub"):
                 n += gen_hub(world, Gtop, z.id, used=used)
             if n < 3:

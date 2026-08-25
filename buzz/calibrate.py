@@ -34,7 +34,9 @@ def anchor_files(world: World, q: Question) -> list[str]:
         mods = [t["module"]]
     elif q.qtype == "elder":
         mods = [t["src"], t["dst"]]
-    # hub / gate / hotspot: prompt-only - no file answers them locally
+    elif q.qtype == "patch":
+        mods = [t["anchor"]]
+    # hub / gate / hotspot / scar: prompt-only - no file answers them locally
     return [world.modules[m].path for m in mods if m in world.modules]
 
 

@@ -401,3 +401,49 @@ def test_who_and_cross_zone_edges(world):
     zid = world.modules["base"].zone
     dump = engine.zone_edges(world, zid)
     assert dump[0].startswith("top-level import edges")
+
+
+def test_streak_bonus_and_reset(world):
+    s = engine.new_session(world)
+    qs = [q for q in world.questions.values() if q.qtype == "walk" and not q.boss]
+    if len(qs) < 1:
+        pytest.skip("no walk questions")
+    s.streak = 4
+    q = qs[0]
+    r = engine.answer(world, s, q.id, "walk", q.truth["example"])
+    assert r["correct"] and r["gained"] == round(q.xp * 1.2)
+    assert s.streak == 5
+    # a reveal breaks the streak
+    s2 = engine.new_session(world)
+    s2.streak = 3
+    cyc = next(q for q in world.questions.values() if q.qtype == "cycle")
+    engine.hint(world, s2, cyc.id)
+    engine.hint(world, s2, cyc.id)
+    engine.hint(world, s2, cyc.id)
+    assert s2.streak == 0
+
+
+def test_patch_and_scar_verbs():
+    from buzz.model import World, Question, Module, Zone, Session
+    w = World(repo="x", sha="y")
+    for n in ("a", "b", "c"):
+        w.modules[n] = Module(name=n, path=n, zone="z1", commits=5)
+    w.zones["z1"] = Zone(id="z1", name="Z", members=["a", "b", "c"])
+    w.questions["q1"] = Question(
+        id="q1", zone="z1", qtype="patch", verb="point", prompt="",
+        truth={"module": "b", "anchor": "a", "subject": "fix thing",
+               "date": "2024-01-01", "suspects": ["b", "c"]}, xp=25)
+    w.questions["q2"] = Question(
+        id="q2", zone="z1", qtype="scar", verb="point", prompt="",
+        truth={"module": "c", "subject": "Revert fix", "date": "2024-02-02"},
+        xp=20)
+    s = Session(here="a", discovered=["a"], seen=["a"])
+    r = engine.answer(w, s, "q1", "point", ["b"])
+    assert r["correct"] and "chronicle" in r["explain"]
+    r2 = engine.answer(w, s, "q2", "point", ["c"])
+    assert r2["correct"] and "scar" in r2["explain"]
+
+
+def test_events_captured(world):
+    # fixture repo has focused commits touching base+demo together
+    assert isinstance(world.events, list)

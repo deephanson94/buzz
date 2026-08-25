@@ -218,12 +218,22 @@ RETRY_COST = 0.3      # XP fraction forfeited per extra region attempt
 MAX_RETRIES = 2
 
 
+STREAK_STEP = 0.05    # bonus per consecutive clean solve
+STREAK_MAX = 0.50
+
+
 def _award(s: Session, q: Question, frac: float) -> int:
     hint_frac = HINT_COST.get(s.hints.get(q.id, 0), 0.0)
     retry_frac = min(1.0, RETRY_COST * s.tries.get(q.id, 0))
-    gained = max(0, int(round(q.xp * frac * (1 - hint_frac) * (1 - retry_frac))))
+    clean = frac >= 1.0 and hint_frac == 0 and not s.tries.get(q.id)
+    # stakes without loss (design rule: progress is never removed): a clean
+    # first-try solve extends a bonus streak; guessing merely breaks it
+    streak_bonus = min(STREAK_MAX, STREAK_STEP * s.streak) if clean else 0.0
+    gained = max(0, int(round(q.xp * frac * (1 - hint_frac) * (1 - retry_frac)
+                              * (1 + streak_bonus))))
     s.xp += gained
     s.max_xp += q.xp
+    s.streak = s.streak + 1 if clean else 0
     return gained
 
 
@@ -257,6 +267,12 @@ def _explain(world: World, q: Question) -> str:
     if q.qtype == "elder":
         return (f"{t['src']} entered history {t['born_src']}, long before "
                 f"{t['dst']} ({t['born_dst']})")
+    if q.qtype == "patch":
+        return (f"the chronicle confirms: \"{t['subject']}\" ({t['date']}) "
+                f"moved {t['anchor']} and {t['module']} in one commit")
+    if q.qtype == "scar":
+        return (f"{t['module']} bears the scar: \"{t['subject']}\" "
+                f"({t['date']}) was rolled back")
     if q.qtype == "hotspot":
         return (f"{t['module']} is the hotspot: {t['commits']} commits of "
                 f"rework, more than anything else in the district")
@@ -414,6 +430,7 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
     else:
         s.resolved[q.id] = "revealed"
         s.max_xp += q.xp
+        s.streak = 0
         if q.followup_of is None and q.id not in s.followups:
             fu = make_followup(world, q, len(s.followups))
             if fu:
@@ -534,6 +551,11 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
             text = f"one of the two predates {t['born_dst'][:4]}"
         elif q.qtype == "hotspot":
             text = f"it has taken {t['commits']} commits of rework"
+        elif q.qtype == "patch":
+            text = (f"the companion lives in "
+                    f"{world.zones[world.modules[t['module']].zone].name}")
+        elif q.qtype == "scar":
+            text = "git log is your shovel: search the subjects for 'Revert'"
         else:
             text = f"read {t['src']}'s imports"
         s.hints[q.id] = 1
@@ -564,6 +586,8 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
         elif q.qtype == "elder":
             text = (f"for the record, one of them entered history "
                     f"{t['born_src']} - decide who that sounds like")
+        elif q.qtype in ("patch", "scar"):
+            text = f"the module's name starts with '{t['module'][0]}'"
         elif q.qtype == "hotspot":
             zid = world.modules[t["module"]].zone
             top = sorted(world.zones[zid].members,
@@ -578,6 +602,7 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
     s.hints[q.id] = 3
     s.resolved[q.id] = "revealed"
     s.max_xp += q.xp
+    s.streak = 0
     text = _explain(world, q)
     for m in _modules_in_truth(q):
         if m in world.modules and m not in s.seen:
@@ -648,6 +673,8 @@ LESSONS = {
     "gate": "high-betweenness modules are chokepoints: sever one and whole regions go dark",
     "detour": "redundant import paths are resilience - know the second road before you close the first",
     "elder": "file age explains architecture: the oldest modules shaped every API that came after",
+    "patch": "one commit, two files: change-coupling is the review checklist the import graph never shows",
+    "scar": "a revert marks risk - the module that was rolled back once deserves the hardest review next time",
     "hotspot": "churn concentrates: the file that changed most will change next - review it hardest",
     "direction": "always check which side of an import edge a module is on before touching it",
 }

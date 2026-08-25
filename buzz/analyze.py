@@ -168,21 +168,27 @@ def short_names(dotted: list[str]) -> dict[str, str]:
     return names
 
 
+MAX_EVENTS = 400   # focused cross-module commits kept for Tier-1 quests
+
+
 def git_history(root: Path, path_to_name: dict[str, str]):
-    """churn, authors, co-change, first-commit date from `git log --name-only`."""
+    """churn, authors, co-change, first-commit date, and Tier-1 event
+    samples (focused cross-module commits, reverts) from `git log`."""
     churn: Counter = Counter()
     authors: defaultdict[str, set] = defaultdict(set)
     cochange: Counter = Counter()
     born: dict[str, str] = {}
+    events: list[dict] = []
+    reverts: list[dict] = []
     try:
         raw = subprocess.run(
             ["git", "log", "--no-merges", "--name-only",
-             "--pretty=format:__C__%an|%as"],
+             "--pretty=format:__C__%an|%as|%s"],
             cwd=root, capture_output=True, text=True, timeout=300,
         ).stdout
     except Exception:
-        return churn, authors, cochange, born
-    author, date = None, ""
+        return churn, authors, cochange, born, events, reverts
+    author, date, subject = None, "", ""
     files: list[str] = []
 
     def flush():
@@ -195,18 +201,24 @@ def git_history(root: Path, path_to_name: dict[str, str]):
             for i, a in enumerate(mods):
                 for b in mods[i + 1:]:
                     cochange[(a, b)] += 1
+        # Tier-1 material: real, specific historical changes
+        if subject.startswith("Revert") and 1 <= len(mods) <= 3:
+            reverts.append({"subject": subject[:110], "date": date, "mods": mods})
+        elif len(mods) == 2 and len(events) < MAX_EVENTS and len(subject) > 15:
+            events.append({"subject": subject[:110], "date": date, "mods": mods})
 
     for line in raw.splitlines():
         if line.startswith("__C__"):
             if author is not None:
                 flush()
-            author, _, date = line[5:].partition("|")
+            author, _, rest = line[5:].partition("|")
+            date, _, subject = rest.partition("|")
             files = []
         elif line.strip():
             files.append(line.strip())
     if author is not None:
         flush()
-    return churn, authors, cochange, born
+    return churn, authors, cochange, born, events, reverts
 
 
 def _norm(d: dict[str, float]) -> dict[str, float]:
@@ -342,7 +354,9 @@ def analyze(repo: Path) -> World:
     btw = nx.betweenness_centrality(G)
 
     path_to_name = {str(p.relative_to(repo)): names[d] for d, p in files.items()}
-    churn, authors, cochange, born = git_history(repo, path_to_name)
+    churn, authors, cochange, born, events, reverts = git_history(repo, path_to_name)
+    world.events = events
+    world.reverts = reverts
 
     for d, p in files.items():
         n = names[d]

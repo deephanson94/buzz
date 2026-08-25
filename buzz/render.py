@@ -203,6 +203,9 @@ def render_status(world: World, s: Session) -> str:
         f"questions: {solved} solved, "
         f"{sum(1 for v in s.resolved.values() if v == 'partial')} partial, "
         f"{sum(1 for v in s.resolved.values() if v == 'revealed')} revealed",
+        f"streak: {s.streak} clean solve(s) in a row"
+        + (f" (+{min(50, 5 * s.streak)}% XP on the next clean solve)"
+           if s.streak else " (first-try, hint-free solves build a bonus)"),
         f"abilities: {', '.join(s.abilities) or 'none yet'}",
         f"boss lair: {'OPEN' if s.boss_open else 'sealed'}",
     ]
