@@ -111,6 +111,35 @@ def scout(world: World, s: Session, zone_name: str) -> int:
     return added
 
 
+def peek(world: World, s: Session, name: str) -> str:
+    """Remote look: read a module you can see on the map without flying
+    there. Reading is discovering - it counts, it just doesn't move you."""
+    m = resolve_module(world, name)
+    if m != s.here and m not in s.seen:
+        raise GameError(f"{m} is still under fog - you have not seen it yet")
+    prev = s.here
+    _arrive(world, s, m)
+    s.here = prev
+    return m
+
+
+def zone_edges(world: World, zid: str) -> list[str]:
+    """The induced top-level import subgraph of one district, with in-district
+    in-degree tallies - the audit trail behind hub/region/gate quests."""
+    members = set(world.zones[zid].members)
+    edges = [e for e in world.edges
+             if e.kind == TOP and e.src in members and e.dst in members]
+    lines = [f"top-level import edges inside {world.zones[zid].name} ({zid}):"]
+    for e in sorted(edges, key=lambda e: (e.src, e.dst)):
+        lines.append(f"  {e.src} -> {e.dst}")
+    if not edges:
+        lines.append("  (none - this district is held together by git "
+                     "history and convention, not imports)")
+    lines.append("(cross-district edges are not shown - walk the map for those; "
+                 "the tallying is on you)")
+    return lines
+
+
 def get_question(world: World, s: Session, qid: str) -> Question:
     if qid in world.questions:
         return world.questions[qid]
@@ -142,7 +171,7 @@ def _award(s: Session, q: Question, frac: float) -> int:
 
 def _explain(world: World, q: Question) -> str:
     t = q.truth
-    if q.qtype in ("walk", "cycle"):
+    if q.qtype in ("walk", "cycle", "detour"):
         return f"one real chain: {' -> '.join(t['example'])}"
     if q.qtype == "region":
         why = t.get("why")
@@ -173,10 +202,24 @@ def _check_walk(world: World, s: Session, q: Question, path: list[str]) -> tuple
     if path[0] != t["src"] or path[-1] != t["dst"]:
         return False, f"the walk must start at {t['src']} and end at {t['dst']}"
     allowed = (TOP, TYPE) if TUNNEL not in s.abilities else (TOP, TYPE, LAZY)
-    if q.qtype == "cycle":
-        allowed = (TOP,)  # the cycle proof is about always-run imports
+    if q.qtype in ("cycle", "detour"):
+        allowed = (TOP,)  # these proofs are about always-run imports
+    avoid = t.get("avoid")
+    if avoid and avoid in path:
+        return False, f"your route touches {avoid} - the whole point is to go around it"
+
+    def hop_ok(a: str, b: str) -> bool:
+        if world.has_edge(a, b, kinds=allowed):
+            return True
+        # forgive a skipped parent-package hop: a -> pkg -> pkg.sub counts
+        # as a -> pkg.sub (the __init__ hop is implicit when importing)
+        parent = b.rsplit(".", 1)[0] if "." in b else None
+        return bool(parent and parent != b
+                    and world.has_edge(a, parent, kinds=allowed)
+                    and world.has_edge(parent, b, kinds=allowed))
+
     for a, b in zip(path, path[1:]):
-        if not world.has_edge(a, b, kinds=allowed):
+        if not hop_ok(a, b):
             return False, f"there is no import from {a} to {b} at that step"
     return True, ""
 
@@ -365,7 +408,7 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
     level = s.hints.get(q.id, 0) + 1
     t = q.truth
     if level == 1:
-        if q.qtype in ("walk", "cycle"):
+        if q.qtype in ("walk", "cycle", "detour"):
             text = f"the shortest chain has {len(t['example']) - 1} hops"
         elif q.qtype == "region":
             text = f"the blast radius contains {len(t['region'])} modules"
@@ -384,7 +427,7 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
         s.hints[q.id] = 1
         return 1, text + "  (XP for this quest now -20%)"
     if level == 2:
-        if q.qtype in ("walk", "cycle"):
+        if q.qtype in ("walk", "cycle", "detour"):
             text = f"the second module in one valid chain is {t['example'][1]}"
         elif q.qtype == "region":
             text = f"one member of the blast radius: {t['region'][0]}"
@@ -482,6 +525,7 @@ LESSONS = {
     "place": "a module's district is defined by where its import neighbors live",
     "hub": "in-degree inside a cluster tells you which wall is load-bearing",
     "gate": "high-betweenness modules are chokepoints: sever one and whole regions go dark",
+    "detour": "redundant import paths are resilience - know the second road before you close the first",
     "direction": "always check which side of an import edge a module is on before touching it",
 }
 
@@ -491,8 +535,8 @@ def reveal_prompt_modules(world: World, s: Session, q: Question) -> None:
     reports) - never the answer set itself."""
     t = q.truth
     named: list = []
-    if q.qtype in ("walk", "cycle", "direction"):
-        named = [t.get("src"), t.get("dst")]
+    if q.qtype in ("walk", "cycle", "direction", "detour"):
+        named = [t.get("src"), t.get("dst"), t.get("avoid")]
     elif q.qtype == "region":
         named = [t.get("target")] + world.zones[q.zone].members
     elif q.qtype == "ghost":

@@ -27,9 +27,11 @@ def render_map(world: World, s: Session) -> str:
     here_zone = ("??? (unplaced)" if s.here in masked
                  else f"zone {world.modules[s.here].zone}, "
                       f"{world.zones[world.modules[s.here].zone].name}")
+    nq = len(world.questions)
     lines = [
         f"=== THE HIVE: {world.repo.rsplit('/', 1)[-1]} "
-        f"| coverage {d}/{total} modules | XP {s.xp} | rank {rank(world, s)} ===",
+        f"| quests {len(s.resolved)}/{nq} | modules visited {d}/{total} "
+        f"| XP {s.xp} | rank {rank(world, s)} ===",
         f"you are at: {s.here}  ({here_zone})",
         "",
     ]
@@ -47,7 +49,7 @@ def render_map(world: World, s: Session) -> str:
             for m in sorted(vis, key=lambda m: -world.modules[m].pagerank):
                 row.append("  " + _mod_label(world, s, m))
             lines.extend(row)
-        hidden = len(z.members) - len(vis)
+        hidden = len([m for m in z.members if m not in s.seen])
         if hidden:
             lines.append(f"  ... and {hidden} module(s) under fog")
         lines.append("")
@@ -78,28 +80,32 @@ def _source_peek(world: World, m) -> list[str]:
             break
     # column-0 lines only: indented (function-level / TYPE_CHECKING) imports
     # stay hidden, same as the fog rules
-    imports = [f"  {i}: {raw[:76]}"
-               for i, raw in enumerate(text.splitlines(), 1)
-               if raw.startswith(("import ", "from "))][:10]
-    if imports:
-        lines.append("  top-of-file import lines (verbatim):")
-        lines.extend("  " + ln for ln in imports)
+    all_imports = [f"  {i}: {raw[:76]}"
+                   for i, raw in enumerate(text.splitlines(), 1)
+                   if raw.startswith(("import ", "from "))]
+    if all_imports:
+        lines.append("  top-of-file import lines (verbatim, relative and "
+                     "absolute forms are the same edge):")
+        lines.extend("  " + ln for ln in all_imports[:25])
+        if len(all_imports) > 25:
+            lines.append(f"    ... +{len(all_imports) - 25} more import lines")
     return lines
 
 
-def render_look(world: World, s: Session) -> str:
-    m = world.modules[s.here]
+def render_look(world: World, s: Session, at: str | None = None) -> str:
+    node = at or s.here
+    m = world.modules[node]
     z = world.zones[m.zone]
     zone_line = ("zone: ??? - a scout must place this module (see its "
-                 "place quest)" if s.here in masked_modules(world, s)
+                 "place quest)" if node in masked_modules(world, s)
                  else f"zone: {z.name} ({z.id}) | role: {m.role}")
     lines = [
-        f"--- {s.here} ---",
+        f"--- {node}{'' if node == s.here else '  (spyglass view)'} ---",
         f"file: {m.path} | {m.loc} lines | {m.commits} commits by {m.authors} author(s)",
         zone_line,
         f"imported by {m.in_degree} module(s)"
-        + (": " + ", ".join(sorted(e.src for e in world.in_edges(s.here) if e.src in s.discovered))
-           + (" +unknown others" if any(e.src not in s.discovered for e in world.in_edges(s.here)) else "")
+        + (": " + ", ".join(sorted(e.src for e in world.in_edges(node) if e.src in s.discovered))
+           + (" +unknown others" if any(e.src not in s.discovered for e in world.in_edges(node)) else "")
            if m.in_degree else ""),
     ]
     peek = _source_peek(world, m)
@@ -110,7 +116,7 @@ def render_look(world: World, s: Session) -> str:
         "",
         "imports (its out-edges - you can walk these with 'buzz go <name>'):",
     ]
-    outs = world.out_edges(s.here)
+    outs = world.out_edges(node)
     if not outs:
         lines.append("  (imports nothing internal - a leaf)")
     for e in sorted(outs, key=lambda e: e.kind):
@@ -202,7 +208,10 @@ setup:
 
 exploring (free, no XP):
   buzz map                     the fog-of-war hive map
-  buzz look                    inspect the module you are standing on
+  buzz look [module]           inspect where you stand - or spyglass any
+                               module you can see on the map
+  buzz edges [zone]            dump a district's internal top-level edges
+                               (the audit trail behind hub/gate quests)
   buzz go <module>             walk an import edge, fast-travel anywhere
                                visited, or scout-fly to any module you can
                                see on the map

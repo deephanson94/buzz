@@ -106,8 +106,13 @@ def main(argv: list[str] | None = None) -> None:
         if cmd == "map":
             print(render.render_map(world, s))
         elif cmd == "look":
-            print(render.render_look(world, s))
+            at = engine.peek(world, s, rest[0]) if rest else None
+            print(render.render_look(world, s, at))
             print("\n" + _try_next(world, s))
+        elif cmd == "edges":
+            zid = (engine.resolve_zone(world, " ".join(rest)) if rest
+                   else world.modules[s.here].zone)
+            print("\n".join(engine.zone_edges(world, zid)))
         elif cmd == "go":
             if not rest:
                 raise GameError("usage: buzz go <module>")
@@ -139,9 +144,20 @@ def main(argv: list[str] | None = None) -> None:
         elif cmd == "scout":
             if not rest:
                 raise GameError("usage: buzz scout <zone-id-or-name>")
-            n = engine.scout(world, s, " ".join(rest))
-            print(f"your scouts report back: {n} new module name(s) on the map "
-                  f"(names only - fly there to read their imports)")
+            zid = engine.resolve_zone(world, " ".join(rest))
+            n = engine.scout(world, s, zid)
+            masked = render.masked_modules(world, s)
+            hidden_here = [m for m in world.zones[zid].members if m in masked]
+            if n:
+                print(f"your scouts report back: {n} new module name(s) on "
+                      f"the map (names only - fly there to read their imports)")
+            else:
+                print("your scouts report back: every name in this district "
+                      "was already on your map")
+            if hidden_here:
+                print(f"({len(hidden_here)} sighting(s) stay unplaced until "
+                      f"their place quest is solved - see 'unplaced sightings' "
+                      f"on the map)")
         elif cmd == "answer":
             if len(rest) < 3:
                 raise GameError("usage: buzz answer <id> <walk|edge|region|place> ...")

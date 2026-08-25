@@ -303,3 +303,56 @@ def test_gate_accepts_any_cut_vertex():
     s = Session(here="a", discovered=["a"], seen=["a"])
     r = engine.answer(w, s, "q1", "point", ["g"])
     assert r["correct"]
+
+
+def test_peek_remote_look(world):
+    s = engine.new_session(world)
+    target = next((m for m in s.seen if m != s.here), None)
+    if target is None:
+        pytest.skip("nothing seen from start")
+    here = s.here
+    engine.peek(world, s, target)
+    assert s.here == here and target in s.discovered
+    with pytest.raises(engine.GameError):
+        engine.peek(world, s, next(m for m in world.modules if m not in s.seen))
+
+
+def test_zone_edges_dump(world):
+    zid = next(iter(world.zones))
+    out = engine.zone_edges(world, zid)
+    assert out and out[0].startswith("top-level import edges")
+
+
+def test_walk_package_hop_forgiven():
+    from buzz.model import World, Question, Module, Zone, Edge, Session
+    w = World(repo="x", sha="y")
+    for n in ("a", "pkg", "pkg.sub"):
+        w.modules[n] = Module(name=n, path=n, zone="z1")
+    w.zones["z1"] = Zone(id="z1", name="Z", members=list(w.modules))
+    w.edges = [Edge("a", "pkg"), Edge("pkg", "pkg.sub")]
+    w.questions["q1"] = Question(
+        id="q1", zone="z1", qtype="walk", verb="walk", prompt="",
+        truth={"src": "a", "dst": "pkg.sub", "example": ["a", "pkg", "pkg.sub"]},
+        xp=10)
+    s = Session(here="a", discovered=["a"], seen=["a"])
+    r = engine.answer(w, s, "q1", "walk", ["a", "pkg.sub"])
+    assert r["correct"], "skipping the parent-package hop must be forgiven"
+
+
+def test_detour_rejects_avoided_module():
+    from buzz.model import World, Question, Module, Zone, Edge, Session
+    w = World(repo="x", sha="y")
+    for n in ("a", "g", "h", "b"):
+        w.modules[n] = Module(name=n, path=n, zone="z1")
+    w.zones["z1"] = Zone(id="z1", name="Z", members=list(w.modules))
+    w.edges = [Edge("a", "g"), Edge("g", "b"), Edge("a", "h"), Edge("h", "b")]
+    w.questions["q1"] = Question(
+        id="q1", zone="z1", qtype="detour", verb="walk", prompt="",
+        truth={"src": "a", "dst": "b", "avoid": "g",
+               "example": ["a", "h", "b"]}, xp=30)
+    s = Session(here="a", discovered=["a"], seen=["a"])
+    r = engine.answer(w, s, "q1", "walk", ["a", "g", "b"])
+    assert not r["correct"] and "touches g" in r["note"]
+    s2 = Session(here="a", discovered=["a"], seen=["a"])
+    r2 = engine.answer(w, s2, "q1", "walk", ["a", "h", "b"])
+    assert r2["correct"]

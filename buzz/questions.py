@@ -23,6 +23,12 @@ def _sig(qtype: str, *parts) -> tuple:
     return (qtype, *parts)
 
 
+def _flavor(world: World, options: list[str]) -> str:
+    """Deterministic phrasing rotation so quests don't read as one template
+    with nouns swapped."""
+    return options[len(world.questions) % len(options)]
+
+
 def _q(world: World, zone: str, qtype: str, verb: str, prompt: str, truth: dict,
        xp: int, distance: int, boss: bool = False) -> Question:
     qid = f"q{len(world.questions) + 1}"
@@ -66,14 +72,66 @@ def gen_walk(world: World, G: nx.DiGraph, zone_id: str, count: int = 2,
         taken.update((a, b))
         example = nx.shortest_path(G, a, b)
         mult = BOSS_XP_MULT if boss else 1
-        _q(world, zone_id, "walk", "walk",
-           f"{a} never imports {b} directly, yet changing {b} can break {a}. "
-           f"Walk the import chain that connects them: start at {a}, end at {b}, "
-           f"naming each module along the way. Any real chain of imports counts.",
+        prompt = _flavor(world, [
+            f"{a} never imports {b} directly, yet changing {b} can break {a}. "
+            f"Walk the import chain that connects them: start at {a}, end at "
+            f"{b}, naming each module along the way. Any real chain of "
+            f"imports counts.",
+            f"A wing-note from the archives: a bad release of {b} once took "
+            f"{a} down with it - though {a} never names {b} anywhere in its "
+            f"file. Retrace the supply line that made it possible: walk the "
+            f"imports from {a} all the way to {b}.",
+            f"Prove the rumor: {a} secretly rests on {b}. Show the evidence "
+            f"as a walk - every hop a real import - from {a} down to {b}.",
+        ])
+        _q(world, zone_id, "walk", "walk", prompt,
            {"src": a, "dst": b, "example": example},
            xp=10 * d * mult, distance=d + 1, boss=boss)
         made += 1
     return made
+
+
+def gen_detour(world: World, G: nx.DiGraph, zone_id: str,
+               used: set | None = None) -> int:
+    """Twist on the walk: the obvious route is closed. Reach b from a
+    WITHOUT touching the collapsed module - proves the player knows more
+    than one road."""
+    zone = world.zones[zone_id]
+    used = used if used is not None else set()
+    for a in sorted(zone.members, key=lambda m: -world.modules[m].out_degree):
+        for b in sorted(zone.members, key=lambda m: -world.modules[m].in_degree):
+            if a == b or world.has_edge(a, b):
+                continue
+            if _sig("walk", a, b) in used:
+                continue
+            if not (G.has_node(a) and G.has_node(b)):
+                continue
+            try:
+                sp = nx.shortest_path(G, a, b)
+            except nx.NetworkXNoPath:
+                continue
+            if not 3 <= len(sp) <= 5:
+                continue
+            interior = sorted(sp[1:-1],
+                              key=lambda m: -world.modules[m].betweenness)
+            for g in interior:
+                H = G.copy()
+                H.remove_node(g)
+                if not nx.has_path(H, a, b):
+                    continue
+                alt = nx.shortest_path(H, a, b)
+                if len(alt) > 6:
+                    continue
+                used.add(_sig("walk", a, b))
+                _q(world, zone_id, "detour", "walk",
+                   f"Cave-in! The tunnel hub {g} has collapsed. {a} still "
+                   f"needs {b}. Walk an import chain from {a} to {b} that "
+                   f"NEVER touches {g} - prove the district has a second "
+                   f"road.",
+                   {"src": a, "dst": b, "avoid": g, "example": alt},
+                   xp=15 * (len(alt) - 1), distance=len(alt))
+                return 1
+    return 0
 
 
 def gen_region(world: World, G: nx.DiGraph, zone_id: str, boss: bool = False,
@@ -100,8 +158,12 @@ def gen_region(world: World, G: nx.DiGraph, zone_id: str, boss: bool = False,
     why = {m: nx.shortest_path(G, m, x) for m in sorted(importers)}
     depth = max(len(p) - 1 for p in why.values())
     mult = BOSS_XP_MULT if boss else 1
+    lead = _flavor(world, [
+        f"Blast radius. You are changing {x}'s public API.",
+        f"Storm warning. A breaking change is landing on {x} tonight.",
+    ])
     _q(world, zone_id, "region", "region",
-       f"Blast radius. You are changing {x}'s public API. Select every module in "
+       f"{lead} Select every module in "
        f"{world.zones[zone_id].name} that could break - everything that imports {x} "
        f"directly or through a chain. {EDGE_RULE} A chain may pass through "
        f"modules OUTSIDE the candidate list (even other zones) - the "
@@ -204,12 +266,18 @@ def gen_ghost(world: World, zone_id: str, boss: bool = False,
             if m != x and m not in accepted
             and not world.has_edge(x, m) and not world.has_edge(m, x)][:4]
         suspects = sorted([accepted[0]] + decoys)
+        lead = _flavor(world, [
+            f"Ghost edge. No import statement of ANY kind (top-level, "
+            f"function-level, or type-hint) connects {x} to it in either "
+            f"direction, yet git says they change together constantly ({topn}+ "
+            f"shared focused commits) - hidden coupling the import graph "
+            f"cannot see.",
+            f"The old bees whisper that {x} has a secret companion: a module "
+            f"it never imports and is never imported by, yet the two have "
+            f"moved in lockstep through {topn}+ focused commits of history.",
+        ])
         _q(world, zone_id, "ghost", "edge",
-           f"Ghost edge. No import statement of ANY kind (top-level, "
-           f"function-level, or type-hint) connects {x} to it in either "
-           f"direction, yet git says they change together constantly ({topn}+ "
-           f"shared focused commits) - hidden coupling the import graph cannot "
-           f"see. Suspects: {', '.join(suspects)}. Investigate with "
+           f"{lead} Suspects: {', '.join(suspects)}. Investigate with "
            f"'buzz probe {x} <suspect>' and reason about which one would HAVE "
            f"to move when {x} moves, then draw the ghost edge: "
            f"answer edge {x} <your-guess>.",
@@ -363,10 +431,12 @@ def generate_questions(world: World) -> None:
             n += gen_place(world, Gfull, z.id, used=used)
             n += gen_hub(world, Gtop, z.id, used=used)
         else:
-            n += gen_walk(world, Gtop, z.id, count=1, used=used)
+            n += gen_detour(world, Gtop, z.id, used=used)
             n += gen_region(world, Gtop, z.id, used=used)
             n += gen_gate(world, Gtop, z.id, used=used)
             n += gen_hub(world, Gtop, z.id, used=used)
+            if n < 3:
+                n += gen_walk(world, Gtop, z.id, count=1, used=used)
         if n < 3:  # thin zone: top up so it stays clearable and worthwhile
             n += gen_walk(world, Gtop, z.id, count=1, used=used)
             n += gen_place(world, Gfull, z.id, used=used)
