@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "buzz-game"
+version = "0.1.0"
+description = "Buzz: a fog-of-war game that teaches how a repo works"
+requires-python = ">=3.10"
+dependencies = ["networkx>=3.0"]
+
+[project.scripts]
+buzz = "buzz.cli:main"
+
+[tool.setuptools]
+packages = ["buzz"]
