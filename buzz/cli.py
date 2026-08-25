@@ -112,9 +112,15 @@ def main(argv: list[str] | None = None) -> None:
             if not rest:
                 raise GameError("usage: buzz go <module>")
             how = engine.go(world, s, rest[0])
-            print(f"[{how}] you arrive at {s.here}\n")
-            print(render.render_look(world, s))
-            print("\n" + _try_next(world, s))
+            m = world.modules[s.here]
+            outs = world.out_edges(s.here)
+            sealed = sum(1 for e in outs if e.kind == "lazy")
+            print(f"[{how}] you arrive at {s.here} "
+                  f"({world.zones[m.zone].name}, role: {m.role}) - "
+                  f"{len(outs)} out-edges"
+                  + (f", {sealed} sealed" if sealed else "")
+                  + ". 'buzz look' for detail.")
+            print(_try_next(world, s))
         elif cmd == "quests":
             print(render.render_quests(world, s, world.modules[s.here].zone))
         elif cmd == "quest":
@@ -144,6 +150,12 @@ def main(argv: list[str] | None = None) -> None:
                 print("\n" + render.render_status(world, s))
             else:
                 print("\n" + _try_next(world, s))
+        elif cmd == "probe":
+            if len(rest) != 2:
+                raise GameError("usage: buzz probe <module-a> <module-b>")
+            a = engine.resolve_module(world, rest[0])
+            b = engine.resolve_module(world, rest[1])
+            print(engine.probe(world, a, b))
         elif cmd == "hint":
             if not rest:
                 raise GameError("usage: buzz hint <id>")

@@ -32,8 +32,12 @@ def _arrive(world: World, s: Session, node: str) -> None:
         s.discovered.append(node)
     if node not in s.seen:
         s.seen.append(node)
-    # reading a file shows you what it imports: out-edge targets become seen
+    # reading a file shows you what it imports: out-edge targets become
+    # seen - except sealed tunnels, whose destination stays ??? until the
+    # tunnel-vision ability is unlocked
     for e in world.out_edges(node):
+        if e.kind == LAZY and TUNNEL not in s.abilities:
+            continue
         if e.dst not in s.seen:
             s.seen.append(e.dst)
 
@@ -79,10 +83,9 @@ def can_travel(world: World, s: Session, dst: str) -> tuple[bool, str]:
                            f"tunnel-vision.")
         return True, "walk"
     if dst in s.seen:
-        # seen on the map but not adjacent and not yet visited
-        return False, (f"you can see {dst} on the map but there is no import "
-                       f"edge from {s.here} to it. Travel via a module that "
-                       f"imports it, or fast-travel once you have visited it.")
+        # seen on the map but never visited and not adjacent: a scout can
+        # still fly there - the fog only hides what no one has named yet
+        return True, "scout-flight"
     return False, f"{dst} is still under fog - you have not seen it yet"
 
 
@@ -124,7 +127,14 @@ def _explain(world: World, q: Question) -> str:
     if q.qtype in ("walk", "cycle"):
         return f"one real chain: {' -> '.join(t['example'])}"
     if q.qtype == "region":
+        why = t.get("why")
+        if why:  # show the witness chain behind every ruling
+            parts = [f"{m} ({' -> '.join(why[m])})" for m in t["region"]]
+            return f"the blast radius of {t['target']}: " + "; ".join(parts)
         return f"the blast radius of {t['target']} is: {', '.join(t['region'])}"
+    if q.qtype == "hub":
+        return (f"{t['module']} is the load-bearing wall - imported top-level "
+                f"by {t['count']} modules of its own district")
     if q.qtype == "ghost":
         return (f"{t['src']} secretly co-changes with {t['best']} "
                 f"({t['shared']} shared commits, zero imports between them)")
@@ -205,6 +215,13 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
         correct = z == t["zone"]
         if not correct:
             note = f"{world.zones[z].name} is not where it lives"
+    elif q.verb == "point":
+        if len(args) != 1:
+            raise GameError("answer point <module>")
+        m = resolve_module(world, args[0])
+        correct = m == t["module"]
+        if not correct:
+            note = f"{m} is not the one"
     else:
         raise GameError(f"unknown verb {q.verb}")
 
@@ -260,6 +277,11 @@ def _post_answer(world: World, s: Session, q: Question) -> None:
     if q.qtype == "cycle" and TUNNEL not in s.abilities:
         s.abilities.append(TUNNEL)
         s.log.append("ability unlocked: tunnel-vision")
+        # retroactively reveal every sealed destination already walked past
+        for node in s.discovered:
+            for e in world.out_edges(node):
+                if e.dst not in s.seen:
+                    s.seen.append(e.dst)
     # zone clearing: every non-boss static quest in the zone resolved
     for z in world.zones.values():
         if z.id in s.cleared:
@@ -271,9 +293,24 @@ def _post_answer(world: World, s: Session, q: Question) -> None:
     if not s.boss_open and len(s.cleared) >= boss_needed(world):
         s.boss_open = True
         s.log.append("the boss lair is open")
+    # Two-stage ending: felling the boss is a big moment, not the end.
+    # Victory = boss down AND every clearable zone cleared (the hive mapped).
     boss_qs = [x for x in world.questions.values() if x.boss]
-    goal = boss_qs or list(world.questions.values())
-    if goal and all(x.id in s.resolved for x in goal) and not s.victory:
+    boss_down = bool(boss_qs) and all(x.id in s.resolved for x in boss_qs)
+    if boss_down and "boss defeated" not in s.log:
+        remaining = [z for z in world.zones
+                     if z not in s.cleared
+                     and any(x.zone == z and not x.boss
+                             for x in world.questions.values())]
+        s.log.append("boss defeated")
+        if remaining:
+            s.log.append(f"the hive's heart is yours, but {len(remaining)} "
+                         f"district(s) remain unmapped - the campaign continues")
+    clearable = {z for z in world.zones
+                 if any(x.zone == z and not x.boss
+                        for x in world.questions.values())}
+    all_cleared = clearable <= set(s.cleared)
+    if (boss_down or not boss_qs) and all_cleared and world.questions and not s.victory:
         s.victory = True
         s.log.append("victory: the hive is mapped")
 
@@ -297,6 +334,8 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
         elif q.qtype == "place":
             nb = t["module"]
             text = f"look at which zone most of {nb}'s neighbors are in"
+        elif q.qtype == "hub":
+            text = f"it is imported by {t['count']} of its own district"
         else:
             text = f"read {t['src']}'s imports"
         s.hints[q.id] = 1
@@ -307,9 +346,16 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
         elif q.qtype == "region":
             text = f"one member of the blast radius: {t['region'][0]}"
         elif q.qtype == "ghost":
-            text = f"the partner's name starts with '{t['best'][0]}'"
+            text = ("it is one of: " + ", ".join(_ghost_candidates(world, t))
+                    + f"  (probe them: buzz probe {t['src']} <candidate>)")
         elif q.qtype == "place":
             text = f"its highest-pagerank neighbor sits in {world.zones[t['zone']].name}"
+        elif q.qtype == "hub":
+            zid = world.modules[t["module"]].zone
+            top = sorted(world.zones[zid].members,
+                         key=lambda m: -world.modules[m].in_degree)
+            cands = [m for m in top if m != t["module"]][:2] + [t["module"]]
+            text = "it is one of: " + ", ".join(sorted(cands))
         else:
             text = f"{t['src']} is the importer"
         s.hints[q.id] = 2
@@ -324,6 +370,42 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
             s.seen.append(m)
     _post_answer(world, s, q)
     return 3, "the oracle reveals everything: " + text
+
+
+def _ghost_candidates(world: World, t: dict) -> list[str]:
+    """Answer + two look-alike decoys (same-zone, high churn, no edge)."""
+    x, best = t["src"], t["best"]
+    zid = world.modules[best].zone
+    decoys = [m for m in sorted(world.zones[zid].members,
+                                key=lambda m: -world.modules[m].commits)
+              if m not in (x, best) and m not in t["accepted"]][:2]
+    return sorted([best] + decoys)
+
+
+def probe(world: World, a: str, b: str) -> str:
+    """Free investigative tool: how are two modules actually related?
+    Shows import edges (with kind) and the co-change count the game itself
+    uses (focused commits only: no merges, no >15-file sweeps)."""
+    lines = []
+    kinds = {TOP: "top-level import", LAZY: "function-level import (sealed tunnel)",
+             TYPE: "TYPE_CHECKING-only import (never runs)"}
+    found = False
+    for e in world.edges:
+        if (e.src, e.dst) in ((a, b), (b, a)):
+            lines.append(f"import edge: {e.src} -> {e.dst}  [{kinds[e.kind]}]")
+            found = True
+    if not found:
+        lines.append(f"no import statement of any kind connects {a} and {b}")
+    shared = next((n for o, n in world.cochange.get(a, []) if o == b), None)
+    if shared is None:
+        shared = next((n for o, n in world.cochange.get(b, []) if o == a), None)
+    if shared:
+        lines.append(f"co-change: {shared} shared focused commits "
+                     f"(merges and >15-file sweeps excluded)")
+    else:
+        lines.append("co-change: nothing notable on record (not in either "
+                     "module's top-10 co-change partners)")
+    return "\n".join(lines)
 
 
 def coverage(world: World, s: Session) -> tuple[int, int]:

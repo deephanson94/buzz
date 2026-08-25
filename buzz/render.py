@@ -67,7 +67,8 @@ def render_look(world: World, s: Session) -> str:
             if TUNNEL in s.abilities:
                 lines.append(f"  ~ {e.dst}  [tunnel: function-level import - passable]")
             else:
-                lines.append(f"  # {e.dst}  [SEALED TUNNEL: function-level import]")
+                lines.append("  # ???  [SEALED TUNNEL: a function-level import "
+                             "hides its destination - solve a cycle quest]")
         elif e.kind == TYPE:
             lines.append(f"  - {e.dst}  [types-only: never runs]")
         else:
@@ -103,6 +104,7 @@ def render_question(world: World, s: Session, q) -> str:
         "edge": f"buzz answer {q.id} edge <importer> <imported>",
         "region": f"buzz answer {q.id} region <module> <module> ...",
         "place": f"buzz answer {q.id} place <zone-id-or-name>",
+        "point": f"buzz answer {q.id} point <module>",
     }[q.verb]
     st = _status_of(s, q.id)
     lines = [f"[{q.id}] ({q.qtype}, {q.xp} XP, status: {st})", "", q.prompt, "",
@@ -143,7 +145,11 @@ setup:
 exploring (free, no XP):
   buzz map                     the fog-of-war hive map
   buzz look                    inspect the module you are standing on
-  buzz go <module>             walk an import edge, or fast-travel anywhere visited
+  buzz go <module>             walk an import edge, fast-travel anywhere
+                               visited, or scout-fly to any module you can
+                               see on the map
+  buzz probe <a> <b>           how are two modules related? shows import
+                               edges (and their kind) + git co-change count
 
 quests (the only source of XP):
   buzz quests                  quests in your current zone
@@ -152,11 +158,17 @@ quests (the only source of XP):
   buzz answer <id> edge <importer> <imported>   draw a dependency edge
   buzz answer <id> region m1 m2 ...    select a blast radius
   buzz answer <id> place <zone>        place a module in its district
+  buzz answer <id> point <module>      point at the module a quest describes
   buzz hint <id>               oracle hint ladder (costs XP; 3rd hint reveals)
 
   buzz status                  XP, rank, abilities, victory progress
 
+Edge kinds matter: `>` top-level imports always run; `#` sealed tunnels are
+function-level imports (walkable after a cycle quest unlocks tunnel-vision);
+`-` TYPE_CHECKING imports never run. Blast-radius questions count ONLY
+top-level chains.
+
 Wrong answers cost nothing but reveal the truth (and spawn a follow-up quest).
-Sealed tunnels (#) are function-level imports - solve a cycle quest to unlock.
-Clear 2 zones to open the boss lair. Beat the boss quests to win.
+Clear 2 zones to open the boss lair; defeating the boss is not the end -
+victory means every district cleared.
 """

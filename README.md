@@ -33,16 +33,23 @@ parallel sessions over one world, `BUZZ_DIR` to relocate).
   district.
 - **Wrong answers reveal the truth** and spawn a smaller follow-up quest.
   Progress is never removed.
-- **Sealed tunnels (Metroidvania).** Function-level imports are impassable
-  until you solve a cycle quest — walking the import cycle that *forces* the
-  import to be lazy — which unlocks tunnel-vision everywhere.
+- **Sealed tunnels (Metroidvania).** Function-level imports hide their
+  destination (`# ???`) and are impassable until you solve a cycle quest —
+  walking the import cycle that *forces* the import to be lazy — which
+  unlocks tunnel-vision everywhere, retroactively revealing every sealed
+  destination you walked past.
 - **Roles from metrics.** The module where churn × centrality peaks is the
   BOSS (its quests unlock after clearing 2 zones). High pagerank + low churn
   is bedrock; high betweenness is a gate; many authors × churn is a swamp.
 - **Ghost edges.** Files with zero imports between them that git says change
   together constantly — hidden coupling the import graph cannot see.
+  `buzz probe <a> <b>` is the in-game instrument: it reports import edges
+  (and their kind) plus the co-change count between any two modules.
 - **The oracle.** A 3-level hint ladder priced in XP; the third hint reveals
   the answer for zero XP.
+- **Two-stage ending.** The boss fight is hive-scale (import-time footprint,
+  the longest march, the strongest ghost coupling) and felling the boss is a
+  big moment — but victory means clearing every district.
 
 ## Ground truth
 

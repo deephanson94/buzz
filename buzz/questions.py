@@ -9,10 +9,18 @@ from __future__ import annotations
 import networkx as nx
 
 from .analyze import top_graph, full_graph
-from .model import World, Question, LAZY, ROLE_BOSS
+from .model import World, Question, LAZY, TYPE, ROLE_BOSS
 
 MAX_PER_ZONE = 6
 BOSS_XP_MULT = 2
+
+# stated in every prompt that depends on it: what counts as a real edge
+EDGE_RULE = ("Count only top-level imports that always run - function-level "
+             "(sealed tunnel) and TYPE_CHECKING-only imports do NOT count.")
+
+
+def _sig(qtype: str, *parts) -> tuple:
+    return (qtype, *parts)
 
 
 def _q(world: World, zone: str, qtype: str, verb: str, prompt: str, truth: dict,
@@ -25,12 +33,15 @@ def _q(world: World, zone: str, qtype: str, verb: str, prompt: str, truth: dict,
 
 
 def gen_walk(world: World, G: nx.DiGraph, zone_id: str, count: int = 2,
-             boss: bool = False, dst_pool=None) -> int:
+             boss: bool = False, dst_pool=None, src_pool=None,
+             used: set | None = None) -> int:
     """Trace an import chain src -> ... -> dst (any valid directed path)."""
     zone = world.zones[zone_id]
+    used = used if used is not None else set()
     targets = dst_pool or zone.members
+    sources = src_pool or zone.members
     pairs = []
-    for a in zone.members:
+    for a in sources:
         for b in targets:
             if a == b or not G.has_node(a) or not G.has_node(b):
                 continue
@@ -45,11 +56,14 @@ def gen_walk(world: World, G: nx.DiGraph, zone_id: str, count: int = 2,
                 pairs.append((d, world.modules[b].pagerank, a, b))
     pairs.sort(key=lambda t: (-t[0], -t[1]))
     made = 0
-    used: set[str] = set()
+    taken: set[str] = set()
     for d, _, a, b in pairs:
-        if made >= count or a in used or b in used:
+        if made >= count or a in taken or b in taken:
             continue
-        used.update((a, b))
+        if _sig("walk", a, b) in used:
+            continue
+        used.add(_sig("walk", a, b))
+        taken.update((a, b))
         example = nx.shortest_path(G, a, b)
         mult = BOSS_XP_MULT if boss else 1
         _q(world, zone_id, "walk", "walk",
@@ -63,14 +77,15 @@ def gen_walk(world: World, G: nx.DiGraph, zone_id: str, count: int = 2,
 
 
 def gen_region(world: World, G: nx.DiGraph, zone_id: str, boss: bool = False,
-               target: str | None = None) -> int:
+               target: str | None = None, used: set | None = None) -> int:
     """Blast radius: all zone members that transitively import x."""
     zone = world.zones[zone_id]
+    used = used if used is not None else set()
     best = None
     candidates = [target] if target else sorted(
         zone.members, key=lambda m: -world.modules[m].pagerank)
     for x in candidates:
-        if not G.has_node(x):
+        if not G.has_node(x) or _sig("region", x) in used:
             continue
         importers = {m for m in zone.members
                      if m != x and G.has_node(m) and nx.has_path(G, m, x)}
@@ -80,27 +95,66 @@ def gen_region(world: World, G: nx.DiGraph, zone_id: str, boss: bool = False,
     if not best:
         return 0
     x, importers = best
-    depth = max(nx.shortest_path_length(G, m, x) for m in importers)
+    used.add(_sig("region", x))
+    # witness chain per member, shown in the reveal so every ruling is taught
+    why = {m: nx.shortest_path(G, m, x) for m in sorted(importers)}
+    depth = max(len(p) - 1 for p in why.values())
     mult = BOSS_XP_MULT if boss else 1
     _q(world, zone_id, "region", "region",
        f"Blast radius. You are changing {x}'s public API. Select every module in "
        f"{world.zones[zone_id].name} that could break - everything that imports {x} "
-       f"directly or through a chain. Candidates: {', '.join(sorted(zone.members))}.",
-       {"target": x, "region": sorted(importers)},
+       f"directly or through a chain. {EDGE_RULE} "
+       f"Candidates: {', '.join(sorted(zone.members))}.",
+       {"target": x, "region": sorted(importers), "why": why},
        xp=(10 + 5 * len(importers)) * mult, distance=1 + depth, boss=boss)
     return 1
 
 
-def gen_cycle(world: World, Gtop: nx.DiGraph, zone_id: str) -> int:
+def gen_boss_reach(world: World, G: nx.DiGraph, boss: str, used: set) -> int:
+    """Boss-scale region: the boss's import-time footprint. Which modules
+    MUST load for `import boss` to succeed? Distractors are the boss's own
+    sealed-tunnel / type-hint dependencies - modules it touches constantly
+    that nevertheless don't load at import time."""
+    if not G.has_node(boss):
+        return 0
+    reach = nx.descendants(G, boss)
+    decoys = sorted(
+        {e.dst for e in world.edges
+         if e.src == boss and e.kind in (LAZY, TYPE) and e.dst not in reach},
+        key=lambda m: -world.modules[m].pagerank)
+    picks = sorted(reach, key=lambda m: -world.modules[m].in_degree)
+    if len(picks) < 3 or len(decoys) < 3:
+        return 0
+    picks, decoys = picks[:5], decoys[:5]
+    cands = sorted(picks + decoys)
+    why = {m: nx.shortest_path(G, boss, m) for m in sorted(picks)}
+    used.add(_sig("region", boss))
+    _q(world, world.modules[boss].zone, "region", "region",
+       f"The heart of the hive. Someone runs `import {boss}`. Which of these "
+       f"modules MUST load successfully for that import to complete? "
+       f"{boss} touches all of them - but modules it reaches only through "
+       f"sealed tunnels (function-level imports) or type-hints do NOT load "
+       f"at import time. Select the ones that do. "
+       f"Candidates: {', '.join(cands)}.",
+       {"target": boss, "region": sorted(picks), "why": why},
+       xp=(10 + 5 * len(picks)) * BOSS_XP_MULT, distance=len(cands), boss=True)
+    return 1
+
+
+def gen_cycle(world: World, Gtop: nx.DiGraph, zone_id: str,
+              used: set | None = None) -> int:
     """Why is this import inside a function? Because top-level would cycle.
     Walk the return path that proves it. Resolving any cycle question
     unlocks the tunnel-vision ability."""
     made = 0
+    used = used if used is not None else set()
     lazy_edges = [e for e in world.edges if e.kind == LAZY and
                   world.modules[e.src].zone == zone_id]
     for e in lazy_edges:
         if made:
             break
+        if _sig("cycle", e.src, e.dst) in used:
+            continue
         if not (Gtop.has_node(e.dst) and Gtop.has_node(e.src)):
             continue
         try:
@@ -109,6 +163,7 @@ def gen_cycle(world: World, Gtop: nx.DiGraph, zone_id: str) -> int:
             continue
         if len(back) < 2 or len(back) > 5:
             continue
+        used.add(_sig("cycle", e.src, e.dst))
         _q(world, zone_id, "cycle", "walk",
            f"A sealed tunnel: {e.src} imports {e.dst} only INSIDE a function, "
            f"not at the top of the file. That is a design decision, not an accident - "
@@ -122,41 +177,77 @@ def gen_cycle(world: World, Gtop: nx.DiGraph, zone_id: str) -> int:
 
 
 def gen_ghost(world: World, zone_id: str, boss: bool = False,
-              target: str | None = None) -> int:
+              target: str | None = None, used: set | None = None) -> int:
     """Hidden coupling: files that change together with no import edge."""
     zone = world.zones[zone_id]
+    used = used if used is not None else set()
     pool = [target] if target else sorted(
         zone.members, key=lambda m: -world.modules[m].commits)
     for x in pool:
+        if _sig("ghost", x) in used:
+            continue
         partners = [(o, n) for o, n in world.cochange.get(x, []) if n >= 12
                     and not world.has_edge(x, o) and not world.has_edge(o, x)]
         if not partners:
             continue
+        used.add(_sig("ghost", x))
         accepted = [o for o, _ in partners[:3]]
         topn = partners[0][1]
         mult = BOSS_XP_MULT if boss else 1
         _q(world, zone_id, "ghost", "edge",
-           f"Ghost edge. No import connects {x} to it in either direction, yet git "
-           f"says they change together constantly ({topn}+ shared commits) - hidden "
-           f"coupling the import graph cannot see. Name the module and draw the "
-           f"ghost edge: answer edge {x} <your-guess>.",
+           f"Ghost edge. No import statement of ANY kind (top-level, "
+           f"function-level, or type-hint) connects {x} to it in either "
+           f"direction, yet git says they change together constantly ({topn}+ "
+           f"shared focused commits) - hidden coupling the import graph cannot "
+           f"see. Investigate with 'buzz probe {x} <candidate>' to compare "
+           f"co-change counts, then draw the ghost edge: "
+           f"answer edge {x} <your-guess>.",
            {"src": x, "accepted": accepted, "best": partners[0][0], "shared": topn},
            xp=20 * mult, distance=2, boss=boss)
         return 1
     return 0
 
 
-def gen_place(world: World, G: nx.DiGraph, zone_id: str) -> int:
+def gen_hub(world: World, G: nx.DiGraph, zone_id: str,
+            used: set | None = None) -> int:
+    """Point at the zone's load-bearing module: most imported-by within the
+    zone. Pushes map-reading; only asked when the answer is unambiguous."""
+    zone = world.zones[zone_id]
+    used = used if used is not None else set()
+    if _sig("hub", zone_id) in used or len(zone.members) < 4:
+        return 0
+    counts = {m: sum(1 for p in G.predecessors(m) if p in zone.members)
+              for m in zone.members}
+    ranked = sorted(counts.items(), key=lambda kv: -kv[1])
+    if ranked[0][1] < 3 or ranked[0][1] == ranked[1][1]:
+        return 0
+    hub, n = ranked[0]
+    used.add(_sig("hub", zone_id))
+    _q(world, zone_id, "hub", "point",
+       f"Every district rests on one load-bearing wall. Which module in "
+       f"{zone.name} is imported (top-level) by more of its own district "
+       f"than any other? Point at it: answer point <module>.",
+       {"module": hub, "count": n},
+       xp=15, distance=n + 1)
+    return 1
+
+
+def gen_place(world: World, G: nx.DiGraph, zone_id: str,
+              used: set | None = None) -> int:
     """Given a module and its neighbors, place it in the right zone.
     Only high-confidence placements (Louvain is noisy)."""
     zone = world.zones[zone_id]
+    used = used if used is not None else set()
     for x in sorted(zone.members, key=lambda m: -world.modules[m].in_degree):
+        if _sig("place", x) in used:
+            continue
         nbrs = sorted(set(G.predecessors(x)) | set(G.successors(x)))
         if len(nbrs) < 3:
             continue
         inside = sum(1 for n in nbrs if world.modules[n].zone == zone_id)
         if inside / len(nbrs) < 0.6:
             continue
+        used.add(_sig("place", x))
         shown = nbrs[:6]
         _q(world, zone_id, "place", "place",
            f"A scout reports a module named {x}. Its import neighbors are: "
@@ -173,27 +264,37 @@ def generate_questions(world: World) -> None:
     Gfull = full_graph(world)
     boss_mods = [m for m, mod in world.modules.items() if mod.role == ROLE_BOSS]
     boss = boss_mods[0] if boss_mods else None
+    used: set = set()
 
-    for z in sorted(world.zones.values(), key=lambda z: z.order):
-        n = 0
-        n += gen_cycle(world, Gtop, z.id)
-        n += gen_walk(world, Gtop, z.id, count=2)
-        n += gen_region(world, Gtop, z.id)
-        n += gen_ghost(world, z.id)
-        if n < MAX_PER_ZONE:
-            gen_place(world, Gfull, z.id)
-
-    # Boss fight: three staged questions in the boss's zone, unlocked after
-    # clearing 2 zones. The boss is the module where churn x centrality peaks.
+    # Boss fight FIRST so zone generation can never duplicate it. Boss
+    # questions are hive-scale: direct-vs-transitive importers across the
+    # whole repo, the longest march into the boss from anywhere, and the
+    # boss's strongest ghost coupling.
     if boss:
         bz = world.modules[boss].zone
-        gen_region(world, Gtop, bz, boss=True, target=boss)
-        if not gen_walk(world, Gtop, bz, count=1, boss=True, dst_pool=[boss]):
-            gen_walk(world, Gtop, bz, count=1, boss=True)
-        gen_ghost(world, bz, boss=True, target=boss)
+        if not gen_boss_reach(world, Gtop, boss, used):
+            gen_region(world, Gtop, bz, boss=True, target=boss, used=used)
+        all_mods = sorted(world.modules)
+        # longest march: into the boss from anywhere; if nothing sits above
+        # the boss (a sink hub), march outward from it instead
+        if not gen_walk(world, Gtop, bz, count=1, boss=True,
+                        dst_pool=[boss], src_pool=all_mods, used=used):
+            gen_walk(world, Gtop, bz, count=1, boss=True,
+                     src_pool=[boss], dst_pool=all_mods, used=used)
+        gen_ghost(world, bz, boss=True, target=boss, used=used)
         for q in world.questions.values():
             if q.boss:
                 q.prompt = "[BOSS] " + q.prompt
+
+    for z in sorted(world.zones.values(), key=lambda z: z.order):
+        n = 0
+        n += gen_cycle(world, Gtop, z.id, used=used)
+        n += gen_walk(world, Gtop, z.id, count=2, used=used)
+        n += gen_region(world, Gtop, z.id, used=used)
+        n += gen_ghost(world, z.id, used=used)
+        n += gen_hub(world, Gtop, z.id, used=used)
+        if n < MAX_PER_ZONE:
+            gen_place(world, Gfull, z.id, used=used)
 
 
 def make_followup(world: World, q: Question, n_existing: int) -> dict | None:

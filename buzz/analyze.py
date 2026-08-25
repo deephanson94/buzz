@@ -72,10 +72,11 @@ class _ImportVisitor(ast.NodeVisitor):
 
     def visit_If(self, node):
         # `if __name__ == "__main__":` demo blocks never run on import —
-        # their imports are not architecture, skip them entirely
+        # their imports are not architecture, skip them entirely. The guard
+        # may be buried in a BoolOp (`if sys.platform != "win32" and
+        # __name__ == "__main__":`), so scan the whole test expression.
         t = node.test
-        if (isinstance(t, ast.Compare) and isinstance(t.left, ast.Name)
-                and t.left.id == "__name__"):
+        if any(isinstance(n, ast.Name) and n.id == "__name__" for n in ast.walk(t)):
             for n in node.orelse:
                 self.visit(n)
             return

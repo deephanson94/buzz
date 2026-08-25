@@ -174,3 +174,63 @@ def test_world_roundtrip(world, tmp_path):
     assert set(w2.modules) == set(world.modules)
     assert len(w2.questions) == len(world.questions)
     assert w2.questions[next(iter(w2.questions))].truth
+
+
+def test_no_duplicate_question_signatures(world):
+    seen = set()
+    for q in world.questions.values():
+        t = q.truth
+        sig = (q.qtype, t.get("src"), t.get("dst"), t.get("target"), t.get("module"))
+        assert sig not in seen, f"duplicate question: {sig}"
+        seen.add(sig)
+
+
+def test_scout_flight_to_seen(world):
+    s = engine.new_session(world)
+    seen_unvisited = [m for m in s.seen if m not in s.discovered]
+    if not seen_unvisited:
+        pytest.skip("start reveals nothing unvisited")
+    # pick one that is NOT adjacent via an out-edge of here
+    adj = {e.dst for e in world.out_edges(s.here)}
+    far = [m for m in seen_unvisited if m not in adj]
+    target = (far or seen_unvisited)[0]
+    ok, how = engine.can_travel(world, s, target)
+    assert ok
+
+
+def test_probe(world):
+    out = engine.probe(world, "core", "base")
+    assert "top-level import" in out
+    out2 = engine.probe(world, "core", "render")
+    assert "sealed tunnel" in out2
+
+
+def test_point_verb(world):
+    hubs = [q for q in world.questions.values() if q.qtype == "hub"]
+    if not hubs:
+        pytest.skip("fixture too small for hub question")
+    q = hubs[0]
+    s = engine.new_session(world)
+    r = engine.answer(world, s, q.id, "point", [q.truth["module"]])
+    assert r["correct"]
+
+
+def test_victory_two_stage(world):
+    s = engine.new_session(world)
+    boss_qs = [q for q in world.questions.values() if q.boss]
+    s.boss_open = True
+    for q in boss_qs:
+        s.resolved[q.id] = "correct"
+    # trigger post-answer bookkeeping via any remaining question
+    remaining = [q for q in world.questions.values() if q.id not in s.resolved]
+    if not remaining or not boss_qs:
+        pytest.skip("fixture lacks boss/regular split")
+    engine._post_answer(world, s, remaining[0])
+    clearable = {z for z in world.zones
+                 if any(x.zone == z and not x.boss for x in world.questions.values())}
+    if not (clearable <= set(s.cleared)):
+        assert not s.victory, "boss down must not end the game while zones remain"
+    for q in world.questions.values():
+        s.resolved[q.id] = "correct"
+    engine._post_answer(world, s, remaining[0])
+    assert s.victory
