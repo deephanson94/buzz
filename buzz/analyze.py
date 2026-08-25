@@ -29,7 +29,11 @@ MIN_ZONE = 3              # smaller Louvain communities merge into the outskirts
 
 
 def find_py_files(root: Path) -> dict[str, Path]:
-    """Map dotted module name (relative to repo root) -> file path."""
+    """Map dotted module name (relative to repo root) -> file path.
+
+    The `src/` layout dir is transparent, and when one top-level package
+    holds the large majority of modules, analysis scopes to it - stray side
+    projects (benchmarks, one-off apps) would otherwise pollute the map."""
     out = {}
     for p in sorted(root.rglob("*.py")):
         rel = p.relative_to(root)
@@ -38,12 +42,21 @@ def find_py_files(root: Path) -> dict[str, Path]:
             continue
         if parts[-1] in ("setup.py", "conftest.py"):
             continue
+        if parts[0] == "src":
+            parts = parts[1:]
+        if not parts:
+            continue
         dotted = ".".join(parts)[:-3]  # strip .py
         if dotted.endswith(".__init__"):
             dotted = dotted[: -len(".__init__")]
         if not dotted:
             continue
         out[dotted] = p
+    groups = Counter(d.split(".")[0] for d in out)
+    if groups:
+        top, n = groups.most_common(1)[0]
+        if n >= 0.6 * len(out) and len(groups) > 1:
+            out = {d: p for d, p in out.items() if d.split(".")[0] == top}
     return out
 
 
@@ -238,16 +251,36 @@ def assign_roles(world: World, G: nx.DiGraph) -> None:
 ZONE_SUFFIXES = ["Chamber", "Gallery", "Vault", "Atrium", "Cells", "Annex", "Combs", "Apiary"]
 
 
+MAX_ZONES = 9   # keep the most-connected districts; fold the rest together
+                # (plugin-registry repos otherwise explode into dozens of
+                # isomorphic 4-file zones - observed on huggingface/peft)
+
+
 def build_zones(world: World, G: nx.DiGraph) -> None:
     communities = nx.community.louvain_communities(G.to_undirected(), seed=42)
     big = [sorted(c) for c in communities if len(c) >= MIN_ZONE]
     small = [m for c in communities if len(c) < MIN_ZONE for m in c]
+
+    # rank communities by how much the rest of the repo imports them
+    member_comm = {m: i for i, c in enumerate(big) for m in c}
+
+    def ext_in(idx):
+        return sum(1 for e in world.edges
+                   if member_comm.get(e.dst) == idx and member_comm.get(e.src) != idx)
+
+    order = sorted(range(len(big)), key=lambda i: (-ext_in(i), -len(big[i])))
+    keep = order[: MAX_ZONES - 1]
+    folded = [m for i in order[MAX_ZONES - 1:] for m in big[i]]
+    big = [big[i] for i in keep]
     big.sort(key=lambda c: -sum(world.modules[m].pagerank for m in c))
     zones = []
     for i, members in enumerate(big):
         top = max(members, key=lambda m: world.modules[m].pagerank)
         name = f"The {top.split('.')[-1].strip('_').title()} {ZONE_SUFFIXES[i % len(ZONE_SUFFIXES)]}"
         zones.append(Zone(id=f"z{i+1}", name=name, members=members))
+    if folded:
+        zones.append(Zone(id=f"z{len(zones)+1}", name="The Commons",
+                          members=sorted(folded)))
     if small:
         zones.append(Zone(id=f"z{len(zones)+1}", name="The Outskirts", members=sorted(small)))
     # play order: bedrock-heaviest zone first, then by how much the REST of

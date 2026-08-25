@@ -5,6 +5,7 @@ the game is discoverable move by move (humans and agents alike).
 """
 from __future__ import annotations
 
+import json
 import os
 import signal
 import sys
@@ -110,6 +111,31 @@ def main(argv: list[str] | None = None) -> None:
         return
     if cmd == "play":
         cmd_play()
+        return
+    if cmd == "calibrate":
+        from . import calibrate
+        world = load_world()
+        if rest and rest[0] == "export":
+            p = game_dir() / "calibration.jsonl"
+            rows = calibrate.export(world)
+            p.write_text("\n".join(json.dumps(r) for r in rows))
+            print(f"{len(rows)} questions exported to {p}")
+        elif rest and rest[0] == "apply" and len(rest) == 2:
+            results = json.loads(Path(rest[1]).read_text())
+            summary = calibrate.apply_verdicts(world, results)
+            world.save(game_dir() / "world.json")
+            print(json.dumps(summary, indent=1))
+        else:
+            raise SystemExit("usage: buzz calibrate export | apply <results.json>")
+        return
+    if cmd == "check":
+        # calibration grader: no session, no XP, no side effects
+        from . import calibrate
+        world = load_world()
+        if len(rest) < 3:
+            raise SystemExit("usage: buzz check <qid> <verb> <args...>")
+        ok = calibrate.check(world, rest[0], rest[1], rest[2:])
+        print("CORRECT" if ok else "WRONG")
         return
 
     world = load_world()

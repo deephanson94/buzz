@@ -159,18 +159,27 @@ def gen_region(world: World, G: nx.DiGraph, zone_id: str, boss: bool = False,
     why = {m: nx.shortest_path(G, m, x) for m in sorted(importers)}
     depth = max(len(p) - 1 for p in why.values())
     mult = BOSS_XP_MULT if boss else 1
+    # a huge district would make an unreadable candidate wall: cap the list,
+    # always containing the full truth plus the most plausible decoys
+    if len(zone.members) > 14:
+        decoys = [m for m in sorted(zone.members,
+                                    key=lambda m: -world.modules[m].in_degree)
+                  if m != x and m not in importers]
+        cands = sorted(set(importers) | set(decoys[: 14 - len(importers)]))
+    else:
+        cands = sorted(m for m in zone.members if m != x)
     lead = _flavor(world, [
         f"Blast radius. You are changing {x}'s public API.",
         f"Storm warning. A breaking change is landing on {x} tonight.",
     ])
     _q(world, zone_id, "region", "region",
-       f"{lead} Select every module in "
-       f"{world.zones[zone_id].name} that could break - everything that imports {x} "
-       f"directly or through a chain. {EDGE_RULE} A chain may pass through "
-       f"modules OUTSIDE the candidate list (even other zones) - the "
-       f"candidates are only what you select from. "
-       f"Candidates: {', '.join(sorted(zone.members))}.",
-       {"target": x, "region": sorted(importers), "why": why},
+       f"{lead} Select every candidate that could break - everything that "
+       f"imports {x} directly or through a chain. {EDGE_RULE} A chain may "
+       f"pass through modules OUTSIDE the candidate list (even other zones) - "
+       f"the candidates are only what you select from. "
+       f"Candidates: {', '.join(cands)}.",
+       {"target": x, "region": sorted(importers), "why": why,
+        "candidates": cands},
        xp=(10 + 5 * len(importers)) * mult, distance=1 + depth, boss=boss)
     return 1
 
@@ -470,7 +479,8 @@ def generate_questions(world: World) -> None:
     def count(qt: str) -> int:
         return sum(1 for q in world.questions.values() if q.qtype == qt)
 
-    CAPS = {"cycle": 2, "region": 3, "hub": 2, "ghost": 4, "gate": 3}
+    CAPS = {"cycle": 2, "region": 3, "hub": 2, "ghost": 4, "gate": 3,
+            "place": 4, "elder": 3, "hotspot": 3}
 
     def capped(qt: str) -> bool:
         return count(qt) >= CAPS.get(qt, 99)
@@ -494,30 +504,31 @@ def generate_questions(world: World) -> None:
                 n += gen_gate(world, Gtop, z.id, used=used)
             if not capped("ghost"):
                 n += gen_ghost(world, z.id, used=used)
-            n += gen_elder(world, z.id, used=used)
-            n += gen_place(world, Gfull, z.id, used=used)
+            if not capped("elder"):
+                n += gen_elder(world, z.id, used=used)
+            if not capped("place"):
+                n += gen_place(world, Gfull, z.id, used=used)
         else:
             n += gen_detour(world, Gtop, z.id, used=used)
             if not capped("region"):
                 n += gen_region(world, Gtop, z.id, used=used)
             if not capped("gate"):
                 n += gen_gate(world, Gtop, z.id, used=used)
-            n += gen_hotspot(world, z.id, used=used)
+            if not capped("hotspot"):
+                n += gen_hotspot(world, z.id, used=used)
             if not capped("hub"):
                 n += gen_hub(world, Gtop, z.id, used=used)
             if n < 3:
                 n += gen_walk(world, Gtop, z.id, count=1, used=used)
         # top up thin zones only
-        if n < 4:
+        if n < 4 and not capped("elder"):
             n += gen_elder(world, z.id, used=used)
-        if n < 4:
+        if n < 4 and not capped("hotspot"):
             n += gen_hotspot(world, z.id, used=used)
-        if n < 3:
-            gen_walk(world, Gtop, z.id, count=1, used=used)
         if n < 3:  # thin zone: top up so it stays clearable and worthwhile
             n += gen_walk(world, Gtop, z.id, count=1, used=used)
-            n += gen_place(world, Gfull, z.id, used=used)
-            gen_ghost(world, z.id, used=used)
+            if not capped("ghost"):
+                gen_ghost(world, z.id, used=used)
 
 
 def make_followup(world: World, q: Question, n_existing: int) -> dict | None:
