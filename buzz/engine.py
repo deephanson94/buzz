@@ -481,10 +481,12 @@ def _post_answer(world: World, s: Session, q: Question) -> None:
             and world.questions and not s.victory):
         s.victory = True
         left = len(clearable) - len([z for z in s.cleared if z in clearable])
-        s.log.append("victory: the campaign is complete")
         if left > 0:
-            s.log.append(f"{left} district(s) remain as endgame - the hive "
-                         f"stays open, or take your wings to another repo")
+            s.log.append("campaign clear - the hive's heart is mapped")
+            s.log.append(f"{left} endgame district(s) stay open - the hive "
+                         f"remains yours, or take your wings to another repo")
+        else:
+            s.log.append("full clear - every district mapped")
 
 
 def hint(world: World, s: Session, qid: str) -> tuple[int, str]:

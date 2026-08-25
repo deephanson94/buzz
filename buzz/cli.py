@@ -202,11 +202,13 @@ def main(argv: list[str] | None = None) -> None:
                 raise GameError("usage: buzz who <module>")
             print("\n".join(engine.who(world, rest[0])))
         elif cmd == "probe":
-            if len(rest) != 2:
-                raise GameError("usage: buzz probe <module-a> <module-b>")
+            if len(rest) < 2:
+                raise GameError("usage: buzz probe <module> <suspect> [suspect ...]")
             a = engine.resolve_module(world, rest[0])
-            b = engine.resolve_module(world, rest[1])
-            print(engine.probe(world, a, b))
+            for other in rest[1:]:
+                b = engine.resolve_module(world, other)
+                print(f"[{a} x {b}]")
+                print(engine.probe(world, a, b))
         elif cmd == "hint":
             if not rest:
                 raise GameError("usage: buzz hint <id>")

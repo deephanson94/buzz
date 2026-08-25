@@ -174,7 +174,14 @@ def render_question(world: World, s: Session, q) -> str:
         "point": f"buzz answer {q.id} point <module>",
     }[q.verb]
     st = _status_of(s, q.id)
-    lines = [f"[{q.id}] ({q.qtype}, {q.xp} XP, status: {st})", "", q.prompt, "",
+    rule = ""
+    if q.verb == "walk":
+        rule = ("edge rule: top-level (always-run) edges ONLY"
+                if q.qtype in ("cycle", "detour") else
+                "edge rule: any import edge you can traverse counts "
+                "(sealed tunnels too, once tunnel-vision is unlocked)")
+    lines = [f"[{q.id}] ({q.qtype}, {q.xp} XP, status: {st})", "", q.prompt,
+             *([rule] if rule else []), "",
              f"answer syntax: {syntax}",
              f"stuck? 'buzz hint {q.id}' (level 1 free-ish, costs XP; level 3 reveals)"]
     return "\n".join(lines)
@@ -200,9 +207,19 @@ def render_status(world: World, s: Session) -> str:
         f"boss lair: {'OPEN' if s.boss_open else 'sealed'}",
     ]
     if s.victory:
+        clearable = {z for z in world.zones
+                     if any(q.zone == z and not q.boss
+                            for q in world.questions.values())}
+        left = len(clearable - set(s.cleared))
         lines.append("")
-        lines.append("*** VICTORY - the hive is mapped. Final rank: "
-                     + rank(world, s) + " ***")
+        if left:
+            lines.append(f"*** CAMPAIGN CLEAR - the hive's heart is mapped. "
+                         f"Rank: {rank(world, s)} ***")
+            lines.append(f"({left} endgame district(s) stay open for 100% "
+                         f"hunters - or point buzz at another repo)")
+        else:
+            lines.append(f"*** FULL CLEAR - every district mapped. Final "
+                         f"rank: {rank(world, s)} ***")
     if s.log:
         lines.append("")
         lines.append("recent events: " + "; ".join(s.log[-3:]))
@@ -248,6 +265,7 @@ function-level imports (walkable after a cycle quest unlocks tunnel-vision);
 top-level chains.
 
 Wrong answers cost nothing but reveal the truth (and spawn a follow-up quest).
-Clear 2 zones to open the boss lair; defeating the boss is not the end -
-victory means every district cleared.
+Clear 2 zones to open the boss lair. The boss plus 3 cleared districts is
+CAMPAIGN CLEAR - the win. Districts beyond that are optional endgame; clear
+them all for the FULL CLEAR title.
 """

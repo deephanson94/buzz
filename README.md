@@ -47,9 +47,10 @@ parallel sessions over one world, `BUZZ_DIR` to relocate).
   (and their kind) plus the co-change count between any two modules.
 - **The oracle.** A 3-level hint ladder priced in XP; the third hint reveals
   the answer for zero XP.
-- **Two-stage ending.** The boss fight is hive-scale (import-time footprint,
-  the longest march, the strongest ghost coupling) and felling the boss is a
-  big moment — but victory means clearing every district.
+- **Campaign arc.** The boss fight is hive-scale (import-time footprint,
+  the longest march, the strongest ghost coupling). Boss + 3 cleared
+  districts is CAMPAIGN CLEAR — the win, landed while the game is fresh.
+  Everything beyond is optional endgame; clearing it all earns FULL CLEAR.
 
 ## Ground truth
 
