@@ -69,9 +69,15 @@ def gen_walk(world: World, G: nx.DiGraph, zone_id: str, count: int = 2,
             continue
         if _sig("walk", a, b) in used:
             continue
-        used.add(_sig("walk", a, b))
-        taken.update((a, b))
         example = nx.shortest_path(G, a, b)
+        # a repo-wide registry spine (X -> config -> pkg -> registry -> Y)
+        # would otherwise stamp out near-identical walks with new endpoints
+        via = _sig("walkvia", tuple(example[1:-1]))
+        if len(example) > 2 and via in used:
+            continue
+        used.add(_sig("walk", a, b))
+        used.add(via)
+        taken.update((a, b))
         mult = BOSS_XP_MULT if boss else 1
         prompt = _flavor(world, [
             f"{a} never imports {b} directly, yet changing {b} can break {a}. "

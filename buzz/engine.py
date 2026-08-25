@@ -43,9 +43,16 @@ def _arrive(world: World, s: Session, node: str) -> None:
 
 
 def resolve_module(world: World, name: str) -> str:
-    """Accept exact short names, case-insensitive, or unique suffix."""
+    """Accept exact short names, case-insensitive, unique suffix, or the
+    fully-qualified form (leading package segments the map strips)."""
     if name in world.modules:
         return name
+    # peel leading qualifiers: `peft.tuners.lora.config` -> `tuners.lora.config`
+    probe = name
+    while "." in probe:
+        probe = probe.split(".", 1)[1]
+        if probe in world.modules:
+            return probe
     low = name.lower().lstrip("_")
     exact = [m for m in world.modules if m.lower().lstrip("_") == low]
     if len(exact) == 1:
