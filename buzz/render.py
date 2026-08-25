@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from .model import World, Session, ROLE_GLYPH, LAZY, TYPE
-from .engine import coverage, rank, TUNNEL, BOSS_ZONES_NEEDED
+from .engine import coverage, rank, boss_needed, TUNNEL
 
 
 def _mod_label(world: World, s: Session, m: str) -> str:
@@ -39,7 +39,7 @@ def render_map(world: World, s: Session) -> str:
             lines.append(f"  ... and {hidden} module(s) under fog")
         lines.append("")
     if not s.boss_open:
-        lines.append(f"(boss quests are sealed until {BOSS_ZONES_NEEDED} zones are cleared)")
+        lines.append(f"(boss quests are sealed until {boss_needed(world)} zones are cleared)")
     else:
         lines.append("!! the BOSS LAIR is open - see 'buzz quests' in the boss zone")
     return "\n".join(lines)

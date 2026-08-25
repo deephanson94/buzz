@@ -107,7 +107,7 @@ def question_open(world: World, s: Session, q: Question) -> tuple[bool, str]:
     if q.id in s.resolved:
         return False, "already resolved"
     if q.boss and not s.boss_open:
-        return False, f"boss quests unlock after clearing {BOSS_ZONES_NEEDED} zones"
+        return False, f"boss quests unlock after clearing {boss_needed(world)} zones"
     return True, ""
 
 
@@ -246,6 +246,16 @@ def _modules_in_truth(q: Question) -> list[str]:
     return out
 
 
+def boss_needed(world: World) -> int:
+    """Zones to clear before the boss opens - capped by how many zones can
+    actually be cleared (small repos may have quest-less zones)."""
+    clearable = sum(
+        1 for z in world.zones
+        if any(q.zone == z and not q.boss for q in world.questions.values())
+    )
+    return min(BOSS_ZONES_NEEDED, clearable)
+
+
 def _post_answer(world: World, s: Session, q: Question) -> None:
     if q.qtype == "cycle" and TUNNEL not in s.abilities:
         s.abilities.append(TUNNEL)
@@ -258,11 +268,12 @@ def _post_answer(world: World, s: Session, q: Question) -> None:
         if zq and all(x.id in s.resolved for x in zq):
             s.cleared.append(z.id)
             s.log.append(f"zone cleared: {z.name}")
-    if not s.boss_open and len(s.cleared) >= BOSS_ZONES_NEEDED:
+    if not s.boss_open and len(s.cleared) >= boss_needed(world):
         s.boss_open = True
         s.log.append("the boss lair is open")
     boss_qs = [x for x in world.questions.values() if x.boss]
-    if boss_qs and all(x.id in s.resolved for x in boss_qs) and not s.victory:
+    goal = boss_qs or list(world.questions.values())
+    if goal and all(x.id in s.resolved for x in goal) and not s.victory:
         s.victory = True
         s.log.append("victory: the hive is mapped")
 
