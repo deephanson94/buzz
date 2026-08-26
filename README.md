@@ -15,12 +15,18 @@ pip install -e .
 mkdir game && cd game
 buzz analyze /path/to/some/repo     # build the world (seconds; Python repos)
 buzz play                           # wake up in the hive
-buzz help                           # everything else
 ```
 
-The game is a stateful CLI: every command prints the current view and a
-contextual "try next". State lives in `./.buzz/` (`BUZZ_SESSION=<name>` for
-parallel sessions over one world, `BUZZ_DIR` to relocate).
+On a real terminal, `buzz play` drops you into an interactive shell: no
+`buzz` prefix, tab-completion over commands and every module name you have
+sighted (the completer respects the fog), a persistent one-line HUD
+(xp / streak / facts learned / where you are), and a colored verdict on
+every answer. Re-enter anytime with bare `buzz`. Every command also works
+one-shot (`buzz map`, `buzz answer q3 ...`) for pipes, agents, and CI.
+
+State lives in `./.buzz/` (`BUZZ_SESSION=<name>` for parallel sessions
+sharing one world - `buzz standings` is the leaderboard across them -
+`BUZZ_DIR` to relocate).
 
 ## How it plays
 
@@ -45,12 +51,24 @@ parallel sessions over one world, `BUZZ_DIR` to relocate).
   together constantly — hidden coupling the import graph cannot see.
   `buzz probe <a> <b>` is the in-game instrument: it reports import edges
   (and their kind) plus the co-change count between any two modules.
+- **Git archaeology quests.** Patch quests hand you a real commit subject
+  and ask which second module had to move with it (`buzz probe` supplies
+  the pair evidence); scar quests dig up reverts; elder quests date the
+  architecture. `buzz rescout` diffs the repo against the world's pinned
+  commit and spawns AFTERSHOCK quests from commits that landed since.
 - **The oracle.** A 3-level hint ladder priced in XP; the third hint reveals
-  the answer for zero XP.
-- **Campaign arc.** The boss fight is hive-scale (import-time footprint,
-  the longest march, the strongest ghost coupling). Boss + 3 cleared
-  districts is CAMPAIGN CLEAR — the win, landed while the game is fresh.
-  Everything beyond is optional endgame; clearing it all earns FULL CLEAR.
+  the answer for zero XP. Clean first-try solves build a streak bonus; a
+  miss halves the streak (XP is never subtracted).
+- **Campaign arc.** The boss is a STAGED, hive-scale encounter (blast
+  radius, the longest march, the strongest ghost coupling - stages unseal
+  in order). Boss + 3 cleared districts is CAMPAIGN CLEAR — the win, landed
+  while the game is fresh. Everything beyond is optional endgame; clearing
+  it all earns FULL CLEAR.
+- **The learning is the loot.** Every resolved quest - win or lose - banks
+  a field note. `buzz notes` is the mid-run glance; `buzz recap` compiles
+  the run into evidence-backed onboarding notes for the repo; `buzz atlas`
+  renders the fog-of-war map as an interactive HTML file with per-module
+  dossiers.
 
 ## Ground truth
 
@@ -63,14 +81,19 @@ Anything answerable from a single file is never asked.
 
 ## Design doc
 
-See `docs/DESIGN_V1.md` for the full design. v1 deviations from it:
+See `docs/DESIGN_V1.md` for the full design and `docs/FINDINGS.md` for the
+14-round playtest program that shaped it. v1 notes:
 
-- **Text-first**: the 2D map is rendered as text; a graphical renderer is a
-  later layer on the same world model. Chosen so both humans (terminal) and
-  agents can play the identical game.
-- **No LLM in the pipeline**: v1 question *text* is templated, not generated;
-  the LLM bracketing filter is replaced by the graph-distance floor. Hints
-  are deterministic. This keeps `analyze` at ~10s for a 4.5k-commit repo.
+- **Text-first**: the terminal is the primary surface (`buzz atlas` renders
+  the same world model as HTML). Chosen so both humans and agents can play
+  the identical game.
+- **LLM optional, never trusted for truth**: quest *text* is templated by
+  default. The solver-bracketing quality gate is real (`buzz calibrate
+  export/apply`: questions a shallow solver cracks or a strong solver
+  cannot are pruned), and an optional authored tier exists (`buzz author
+  export/apply`: LLM-written semantic questions, validated so the answer
+  resolves and never leaks). Ground truth always comes from the graph or
+  git.
 - **Languages**: Python analysis only in v1 (git questions are
   language-agnostic by construction, wired to Python worlds for now).
 
