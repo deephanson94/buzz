@@ -134,7 +134,9 @@ def run_shell(world: World, s: Session, save) -> None:
         if cmd in ("tui", "overworld"):
             try:
                 from .overworld import run_overworld
-                run_overworld(world, s, save)
+                from .cli import game_dir
+                run_overworld(world, s, save,
+                              sessions_dir=game_dir() / "sessions")
                 print(paint("(back from the overworld - the shell "
                             "continues)", "dim"))
             except GameError as e:

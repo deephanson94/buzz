@@ -820,6 +820,37 @@ def test_overworld_layout_pure(world):
     assert len({v for v in tiles.values()}) == len(tiles)
 
 
+def test_whispers_true_and_guarded(world):
+    from buzz.overworld import _whisper
+    from buzz.model import Question
+    s = engine.new_session(world)
+    m = s.here
+    w1 = _whisper(world, s, m)
+    assert w1 is None or w1.startswith("~ ")
+    # once heard, a tile stays quiet
+    assert m in s.whispers or w1 is None
+    assert _whisper(world, s, m) is None or m not in s.whispers
+    # leak guard: an open ghost quest silences the co-change whisper
+    partner = next(iter(world.cochange.get(m, [])), None)
+    if partner:
+        world.questions["qq_ghost"] = Question(
+            id="qq_ghost", zone=world.modules[m].zone, qtype="ghost",
+            verb="edge", prompt="",
+            truth={"src": m, "accepted": [partner[0]], "best": partner[0],
+                   "suspects": [partner[0]]}, xp=20)
+        s2 = engine.new_session(world)
+        got = _whisper(world, s2, m)
+        assert got is None or partner[0] not in got
+        del world.questions["qq_ghost"]
+
+
+def test_session_roundtrip_with_whispers(tmp_path):
+    from buzz.model import Session
+    s = Session(here="a", discovered=["a"], seen=["a"], whispers=["a", "b"])
+    p = tmp_path / "s.json"
+    s.save(p)
+    s2 = Session.load(p)
+    assert s2.whispers == ["a", "b"]
 def test_wanted_daily(world):
     from buzz import wanted
     s = engine.new_session(world)
