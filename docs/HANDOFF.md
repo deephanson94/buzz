@@ -1,46 +1,57 @@
-# Handoff
+# Session handoff
 
-## Snapshot (2026-08-26, end of day)
+Start a fresh session with `/kickoff`; end one with `/handoff`.
 
-- `main` (default) holds EVERYTHING: shell + overworld, lore, small-hive
-  support, decision tier, flow tier, atlas diagrams. PRs #1-#5 all
-  merged, CI green (via workflow_dispatch where webhooks dropped - see
-  CLAUDE.md's stuck-CI playbook). Feature branches may be deleted.
-- Branch model: main stays stable; feature branches merge via PR.
+## Where things stand (2026-08-26, end of the "long job" session)
 
-## What just happened
+Twelve PRs merged to main; main is green (pytest 56 passed + smoke) and
+carries the full stack:
 
-- PR #5 overworld: buzz tui, a curses map screen - bee walks districts
-  with arrow keys, fog lifts tile by tile; never load-bearing.
-- PR #4 atlas diagrams: THE STRATA (layers) + THE JOURNEYS (sequence
-  strips for solved journeys) - both earned, fog-respecting.
-- PR #3 flow tier: conservative call graph (buzz/flow.py), JOURNEY
-  quests, buzz flow tool. Panel round 17: junior 7/8, staff 7/7.
-- PR #2 decision tier: cut/refactor/order/via. Panel rounds 15-16.
-- analyze --lore: automated semantic layer (owner-validated on their
-  private repo, voice-tuned to the hive register).
+1. Plain-language pass, shell, HUD (#1) - round 14, best continue 7.33
+2. Decision tier: cut / refactor / order / via (#2) - rounds 15-16
+3. Flow tier: journeys over the conservative call graph (#3) - round 17
+4. Atlas diagrams: THE STRATA + THE JOURNEYS (#4)
+5. Overworld TUI (#5) + purpose fixes (#9) - rounds 18-18c
+6. help/tui + bare-buzz entry guidance (#6, #7) - owner dogfood fixes
+7. Standing scout roster + /panel skill (#8)
+8. Exam + badges (#10) - rounds W2/W2c, confirmation 8/8
+9. Wanted poster + onboarding export (#11) - round W3
+10. Overworld whispers + fellow scouts (#12) - rounds W1/W1c, purpose 9
 
-## In flight
+## The game surface now
 
-- Nothing mid-edit. All work is merged and tested (48 passed, 3 skipped).
+`analyze [--lore]` -> `play` (shell) / `tui` (overworld). In-game:
+map/look/edges/go/quests/quest/answer/hint/scout/probe/trace/chronicle/
+who/flow/notes/atlas/recap/standings/rescout/status/words + `exam`
+(retention run, oldest-first, 0 XP), `badges` (earned honors),
+`wanted` (daily mystery), `export` (onboarding pack). 15+ quest types
+across three tiers (structure / decision / flow) + lore layer.
 
-## Next up
+## Methodology state
 
-1. Owner dogfoods the full stack on their private repo ("pixie"):
-   git pull && buzz analyze <repo> --lore && buzz play / buzz tui.
-   Their verdict decides the next lever - they are the instrument now.
-2. Possible next levers, unranked until that verdict: overworld polish
-   (quest markers on tiles?), journey branching at dynamic-dispatch
-   seams (round-17 staff ask), multi-language analysis, a combined-
-   stack panel round on waggle.
+- Panels run on the roster in `.claude/agents/` via `/panel`. The pin
+  rule was broken TWICE this session (round 18, round W1) - both times
+  produced contamination that had to be discounted; use worktrees and
+  do not touch the code under test until every scout reports.
+- Confirmation rounds after fixes are cheap and decisive (W1c, W2c,
+  18c all resolved keep-or-kill cleanly).
+- GitHub Actions webhooks dropped once mid-session and recovered;
+  the CLAUDE.md stuck-CI playbook (workflow_dispatch) worked as
+  written.
 
-## Test / validation state
+## Known open items (small, recorded in FINDINGS)
 
-- python -m pytest tests/ (48/3 on main), bash scripts/smoke.sh.
-- Panel methodology + 17 rounds of history: docs/FINDINGS.md.
-- CI: pushes to main/claude/**/feature/** + PRs + workflow_dispatch.
-  If runs do not materialize or stick in queued: CLAUDE.md playbook.
+- Exam "no tools" is an honor system (single process cannot enforce).
+- `wanted` day-2 difficulty collapses once fog is fully lifted -
+  a v2 question (fog-independent clue ladders?).
+- F18a deferred: draw import-edge connectors between overworld tiles.
+- Journey/flow quests in the exam accept only the canonical example
+  path shape the engine verifies; fine today, worth watching.
 
-## Open questions for the human
+## Owner's dogfood loop
 
-- None blocking. Overworld verdict (walking vs typing go) most wanted.
+```bash
+cd <game-dir> && git -C <buzz-checkout> pull
+buzz analyze /ssd2/deep/pixie --lore
+buzz play        # or: buzz tui
+```
