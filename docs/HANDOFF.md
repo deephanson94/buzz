@@ -2,13 +2,15 @@
 
 ## Snapshot (2026-08-26)
 
-- Working branch: `claude/sonnet-subagents-game-lbvql5`, mirrored to
-  `main` (repo default) at every green milestone - both at the
-  small-hive-fixes commit. CI (`.github/workflows/ci.yml`: pytest 3.10/3.12
-  + clean-install smoke) is green on both; it does NOT run on `feature/**`.
+- Branch model (owner-defined): `main` is the default branch and must
+  stay stable - the owner dogfoods from it. Feature branches merge into
+  `main` via PULL REQUEST from here on (the earlier direct-push-to-main
+  practice is retired). CI (`.github/workflows/ci.yml`: pytest 3.10/3.12
+  + clean-install smoke) runs on `main`, `claude/**`, `feature/**`, and
+  all PRs.
 - `feature/decision-quests` holds the decision-quest tier (cut / refactor /
-  order / via), validated by panel rounds 15-16, NOT yet merged - the
-  owner wants to feel it in a dogfood before merging.
+  order / via), validated by panel rounds 15-16, NOT yet merged - it
+  awaits the owner's dogfood, then a PR into `main`.
 - Owner's dogfood target: a private 9-module scripts repo ("pixie");
   replica of its shape lives in the session scratchpad as `pixieish/`.
 
