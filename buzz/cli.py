@@ -61,6 +61,10 @@ def cmd_analyze(args: list[str]) -> None:
     nq = len(world.questions)
     print(f"world built: {len(world.modules)} modules, {len(world.edges)} edges, "
           f"{len(world.zones)} zones, {nq} quests  (pinned to {world.sha[:10]})")
+    if len(world.modules) < 15 or len(world.edges) < 12:
+        print("(a small hive: few modules, a flat import graph - expect a "
+              "short campaign. buzz bites hardest on big, messy repos you "
+              "don't already know)")
     print("start playing: buzz play")
 
 
@@ -264,9 +268,20 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
                   f"their place quest is solved - see 'unplaced sightings' "
                   f"on the map)")
     elif cmd == "answer":
-        if len(rest) < 3:
-            raise GameError("usage: buzz answer <id> <walk|edge|region|place> ...")
-        qid, verb, params = rest[0], rest[1], rest[2:]
+        if len(rest) < 2:
+            raise GameError("usage: buzz answer <id> [verb] <answer...> - "
+                            "the verb (walk/edge/region/place/point) is "
+                            "optional; the quest already knows its own")
+        qid = rest[0]
+        VERBS = ("walk", "edge", "region", "place", "point", "order")
+        if rest[1] in VERBS:
+            verb, params = rest[1], rest[2:]
+        else:
+            # first dogfooder's question: "what does point even mean?" -
+            # they shouldn't have to know. The quest knows its verb.
+            verb, params = engine.get_question(world, s, qid).verb, rest[1:]
+        if not params:
+            raise GameError("usage: buzz answer <id> [verb] <answer...>")
         pre_log = len(s.log)
         pre_victory = s.victory
         r = engine.answer(world, s, qid, verb, params)

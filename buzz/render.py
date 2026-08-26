@@ -218,6 +218,7 @@ def render_question(world: World, s: Session, q) -> str:
              *([rule] if rule else []),
              *([evidence] if evidence else []), "",
              f"answer syntax: {syntax}",
+             "(the verb after the id is optional - the quest knows its own)",
              f"stuck? 'buzz hint {q.id}' (level 1 free-ish, costs XP; level 3 reveals)"]
     return "\n".join(lines)
 

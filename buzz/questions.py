@@ -9,7 +9,7 @@ from __future__ import annotations
 import networkx as nx
 
 from .analyze import top_graph, full_graph
-from .model import World, Question, LAZY, TYPE, ROLE_BOSS
+from .model import World, Question, TOP, LAZY, TYPE, ROLE_BOSS
 
 MAX_PER_ZONE = 6
 BOSS_XP_MULT = 2
@@ -21,6 +21,13 @@ EDGE_RULE = ("Count only top-level imports that always run - function-level "
 
 def _sig(qtype: str, *parts) -> tuple:
     return (qtype, *parts)
+
+
+def _small(world: World) -> bool:
+    """A small hive: scripts-repo scale, where the big-repo thresholds
+    starve every generator (first private-repo dogfood: 9 modules, 5
+    edges -> exactly one quest and an instant FULL CLEAR)."""
+    return len(world.modules) < 15 or len(world.edges) < 12
 
 
 def _flavor(world: World, options: list[str]) -> str:
@@ -280,7 +287,8 @@ def gen_ghost(world: World, zone_id: str, boss: bool = False,
     for x in pool:
         if _sig("ghost", x) in used:
             continue
-        partners = [(o, n) for o, n in world.cochange.get(x, []) if n >= 12
+        floor = 4 if _small(world) else 12
+        partners = [(o, n) for o, n in world.cochange.get(x, []) if n >= floor
                     and not world.has_edge(x, o) and not world.has_edge(o, x)]
         # the same hidden coupling must never be asked twice from opposite
         # sides (a panel found the boss fight re-asked as a zone quest)
@@ -338,12 +346,13 @@ def gen_hub(world: World, G: nx.DiGraph, zone_id: str,
     zone. Pushes map-reading; only asked when the answer is unambiguous."""
     zone = world.zones[zone_id]
     used = used if used is not None else set()
-    if _sig("hub", zone_id) in used or len(zone.members) < 4:
+    min_members, min_deg = (3, 2) if _small(world) else (4, 3)
+    if _sig("hub", zone_id) in used or len(zone.members) < min_members:
         return 0
     counts = {m: sum(1 for p in G.predecessors(m) if p in zone.members)
               for m in zone.members}
     ranked = sorted(counts.items(), key=lambda kv: -kv[1])
-    if ranked[0][1] < 3 or ranked[0][1] == ranked[1][1]:
+    if ranked[0][1] < min_deg or ranked[0][1] == ranked[1][1]:
         return 0
     hub, n = ranked[0]
     used.add(_sig("hub", zone_id))
@@ -363,7 +372,9 @@ def gen_place(world: World, G: nx.DiGraph, zone_id: str,
     zone = world.zones[zone_id]
     used = used if used is not None else set()
     for x in sorted(zone.members, key=lambda m: -world.modules[m].in_degree):
-        if _sig("place", x) in used:
+        if _sig("place", x) in used or x == world.start:
+            # never mask the module the player WAKES UP in (a dogfooder
+            # stood in '??? (unplaced)' on turn one)
             continue
         nbrs = sorted(set(G.predecessors(x)) | set(G.successors(x)))
         if len(nbrs) < 3:
@@ -391,13 +402,17 @@ def gen_elder(world: World, zone_id: str, used: set | None = None) -> int:
     if _sig("elder", zone_id) in used:
         return 0
     dated = [m for m in zone.members
-             if world.modules[m].born and world.modules[m].commits >= 5]
+             if world.modules[m].born
+             and world.modules[m].commits >= (2 if _small(world) else 5)]
     dated.sort(key=lambda m: world.modules[m].born)
     if len(dated) < 2:
         return 0
     old, new = dated[0], dated[-1]
-    if world.modules[old].born[:4] == world.modules[new].born[:4]:
-        return 0  # same year: too close to be interesting or fair
+    # gap must be wide enough to be fair: a year normally; a month on a
+    # young small hive (where a year gap cannot exist yet)
+    cut = 7 if _small(world) else 4
+    if world.modules[old].born[:cut] == world.modules[new].born[:cut]:
+        return 0
     used.add(_sig("elder", zone_id))
     _q(world, zone_id, "elder", "edge",
        f"The elders' dispute. Two residents of {zone.name} both claim to be "
@@ -414,12 +429,13 @@ def gen_hotspot(world: World, zone_id: str, used: set | None = None) -> int:
     """Point at the district's most-reworked module (churn hotspot)."""
     zone = world.zones[zone_id]
     used = used if used is not None else set()
-    if _sig("hotspot", zone_id) in used or len(zone.members) < 4:
+    min_members = 3 if _small(world) else 4
+    if _sig("hotspot", zone_id) in used or len(zone.members) < min_members:
         return 0
     ranked = sorted(zone.members, key=lambda m: -world.modules[m].commits)
     top, second = ranked[0], ranked[1]
     c1, c2 = world.modules[top].commits, world.modules[second].commits
-    if c1 < 10 or c1 < c2 * 1.3:
+    if c1 < (5 if _small(world) else 10) or c1 < c2 * 1.3:
         return 0  # no clear hotspot
     used.add(_sig("hotspot", zone_id))
     _q(world, zone_id, "hotspot", "point",
@@ -483,9 +499,10 @@ def gen_patch(world: World, zone_id: str, used: set | None = None) -> int:
        f"A page from the hive's chronicle, {ev['date']}: "
        f"\"{ev['subject']}\". That patch touched {m} - and exactly ONE "
        f"other module in the whole hive had to move in the very same "
-       f"commit. Suspects: {', '.join(suspects)}. Probe each pair for "
-       f"shared patches ('buzz probe {m} <suspect>') and match the DATE. "
-       f"Point at the companion: answer point <module>.",
+       f"commit. Suspects: {', '.join(suspects)}. Unfamiliar names? "
+       f"'buzz look <suspect>' tells you what each one is. Then probe each "
+       f"pair for shared patches ('buzz probe {m} <suspect>') and match "
+       f"the DATE. Point at the companion: answer point <module>.",
        {"module": other, "anchor": m, "subject": ev["subject"],
         "date": ev["date"], "suspects": suspects, "surprising": surprising},
        xp=25, distance=2)
@@ -582,6 +599,35 @@ def gen_gate(world: World, G: nx.DiGraph, zone_id: str,
                    xp=10 * (dist + 1), distance=dist + 1)
                 return 1
     return 0
+
+
+def gen_direction(world: World, zone_id: str, count: int = 2,
+                  used: set | None = None) -> int:
+    """Small-hive filler: who imports whom? On a scripts-scale repo there
+    are no multi-hop chains to walk, but edge DIRECTION is still the first
+    thing a newcomer gets wrong - and the game can ask it honestly."""
+    zone = world.zones[zone_id]
+    used = used if used is not None else set()
+    made = 0
+    for e in sorted(world.edges, key=lambda e: (e.src, e.dst)):
+        if made >= count:
+            break
+        if e.kind != TOP or e.src not in zone.members:
+            continue
+        pair = _sig("direction", *sorted((e.src, e.dst)))
+        if pair in used or world.has_edge(e.dst, e.src):
+            continue
+        used.add(pair)
+        a, b = sorted((e.src, e.dst))
+        _q(world, zone_id, "direction", "edge",
+           f"Two residents, one dependency: {a} and {b}. Exactly one of "
+           f"them imports the other (top-level). Getting this backwards is "
+           f"how newcomers break builds - draw the edge the right way: "
+           f"answer edge <importer> <imported>.",
+           {"src": e.src, "dst": e.dst},
+           xp=10, distance=2)
+        made += 1
+    return made
 
 
 def generate_questions(world: World) -> None:
@@ -683,6 +729,13 @@ def generate_questions(world: World) -> None:
             n += gen_elder(world, z.id, used=used)
         if n < 4 and not capped("hotspot"):
             n += gen_hotspot(world, z.id, used=used)
+        if n < 3 and _small(world):
+            # a small hive has no chains to walk: git-history and edge-
+            # direction quests keep its districts clearable and honest
+            if not capped("patch"):
+                n += gen_patch(world, z.id, used=used)
+            if n < 3:
+                n += gen_direction(world, z.id, count=3 - n, used=used)
         if n < 3:  # thin zone: top up so it stays clearable and worthwhile
             n += gen_walk(world, Gtop, z.id, count=1, used=used)
             if not capped("ghost"):

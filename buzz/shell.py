@@ -116,6 +116,8 @@ def run_shell(world: World, s: Session, save) -> None:
             from .cli import _try_next
             print(_try_next(world, s))
             continue
+        if parts[0] == "buzz" and len(parts) > 1:
+            parts = parts[1:]  # 'buzz look' inside the shell means 'look'
         cmd, rest = parts[0], parts[1:]
         if cmd in ("quit", "exit", "q"):
             break
