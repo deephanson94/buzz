@@ -601,6 +601,235 @@ def gen_gate(world: World, G: nx.DiGraph, zone_id: str,
     return 0
 
 
+# --- the decision tier ---------------------------------------------------
+# Rounds 13/14, every panel: by the third district the measurement
+# templates (count, select, trace) stop teaching. These quests ask for a
+# JUDGEMENT - safest deletion, best refactor, valid migration order - and
+# the ground truth is still computed, never opined.
+
+def gen_cut(world: World, G: nx.DiGraph, zone_id: str,
+            used: set | None = None) -> int:
+    """Decision: one of these modules must be torn down - which demolition
+    strands the FEWEST others? (safe removal = smallest reverse reach)"""
+    zone = world.zones[zone_id]
+    used = used if used is not None else set()
+    if _sig("cut", zone_id) in used:
+        return 0
+    sized = sorted(
+        (len(nx.ancestors(G, m)), m) for m in zone.members
+        if G.has_node(m) and len(nx.ancestors(G, m)) >= 1)
+    if len(sized) < 4:
+        return 0
+    low_n = sized[0][0]
+    lows = [m for n, m in sized if n == low_n][:2]  # ties are both right
+    bigger = [m for n, m in sized if n >= low_n + 2][-4:]
+    if len(bigger) < 3:
+        return 0
+    cands = sorted(lows + bigger)
+    sizes = {m: n for n, m in sized if m in cands}
+    used.add(_sig("cut", zone_id))
+    tie = (" (Candidates may tie for fewest - any pick at the minimum "
+           "counts.)" if len(lows) > 1 else "")
+    _q(world, zone_id, "cut", "point",
+       f"The demolition order. Budget cuts: exactly one of these modules "
+       f"will be deleted outright - {', '.join(cands)}. Every module that "
+       f"transitively imports the victim (top-level chains) is stranded "
+       f"with it. Which deletion strands the FEWEST other modules?{tie} "
+       f"{EDGE_RULE} Point at the safe demolition: answer <module>.",
+       {"module": lows[0], "accepted": lows, "candidates": cands,
+        "sizes": sizes},
+       xp=25, distance=3)
+    return 1
+
+
+def gen_refactor(world: World, G: nx.DiGraph, zone_id: str,
+                 used: set | None = None) -> int:
+    """Decision: two importers of x each propose dropping their import -
+    which severed edge actually shrinks x's blast radius?"""
+    zone = world.zones[zone_id]
+    used = used if used is not None else set()
+    if _sig("refactor", zone_id) in used:
+        return 0
+    for x in sorted(zone.members, key=lambda m: -world.modules[m].in_degree):
+        if not G.has_node(x):
+            continue
+        ins = [e.src for e in world.in_edges(x)
+               if e.kind == TOP and G.has_node(e.src)][:5]
+        if len(ins) < 2:
+            continue
+        base = len(nx.ancestors(G, x))
+        outcome = []
+        for a in ins:
+            G2 = G.copy()
+            G2.remove_edge(a, x)
+            outcome.append((len(nx.ancestors(G2, x)), a))
+        outcome.sort()
+        (n_win, winner), (n_lose, loser) = outcome[0], outcome[-1]
+        if n_lose - n_win < 2:
+            continue  # both cuts land alike - no real decision to teach
+        # the SECOND refactor in a world changes shape (a panel solved the
+        # repeat by rote): a three-way council where every cut helps, just
+        # unevenly - comparison of magnitudes, not spot-the-decoy
+        second = any(q.qtype == "refactor" for q in world.questions.values())
+        distinct = []
+        for n, a in outcome:
+            if not distinct or n > distinct[-1][0]:
+                distinct.append((n, a))
+        if second and len(distinct) >= 3:
+            (n1, w1), (n2, w2), (n3, w3) = distinct[0], distinct[1], distinct[2]
+            used.add(_sig("refactor", zone_id))
+            _q(world, zone_id, "refactor", "edge",
+               f"The refactor council reconvenes - three proposals this "
+               f"time. {w1}, {w2} and {w3} each import {x} top-level, and "
+               f"each owner proposes severing THEIR import to shrink {x}'s "
+               f"blast radius (today: {base} modules reach {x} through "
+               f"always-run chains). All three cuts change something - but "
+               f"not equally. Which single severed import shrinks the "
+               f"radius MOST? {EDGE_RULE} Answer with that edge: "
+               f"answer <importer> {x}.",
+               {"src": w1, "dst": x, "loser": w3, "base": base,
+                "n_win": n1, "n_lose": n3,
+                "others": [[w2, n2], [w3, n3]]},
+               xp=35, distance=3)
+            return 1
+        used.add(_sig("refactor", zone_id))
+        _q(world, zone_id, "refactor", "edge",
+           f"The refactor council. {x} is imported top-level by both "
+           f"{winner} and {loser}, and each owner proposes severing THEIR "
+           f"import to shrink {x}'s blast radius (today: {base} modules "
+           f"can reach {x} through always-run chains). Redundant routes "
+           f"make some cuts pointless - the reach just flows around them. "
+           f"Which single severed import shrinks the radius more? "
+           f"{EDGE_RULE} Answer with that edge: answer <importer> {x}.",
+           {"src": winner, "dst": x, "loser": loser, "base": base,
+            "n_win": n_win, "n_lose": n_lose},
+           xp=30, distance=3)
+        return 1
+    return 0
+
+
+def gen_via(world: World, G: nx.DiGraph, zone_id: str,
+            used: set | None = None) -> int:
+    """Escalated walk: the inspection tour must pass THROUGH a waypoint."""
+    zone = world.zones[zone_id]
+    used = used if used is not None else set()
+    if _sig("via", zone_id) in used:
+        return 0
+    # a panel caught the second via coming out EASIER than the first -
+    # repeats must escalate, so later instances demand a longer tour
+    min_len = 3 + sum(1 for q in world.questions.values()
+                      if q.qtype == "via")
+    for via in sorted(zone.members,
+                      key=lambda m: -world.modules[m].betweenness):
+        if not G.has_node(via):
+            continue
+        for src in sorted(nx.ancestors(G, via)):
+            d1 = nx.shortest_path_length(G, src, via)
+            if not 1 <= d1 <= 2:
+                continue
+            for dst in sorted(nx.descendants(G, via)):
+                if dst == src:
+                    continue
+                d2 = nx.shortest_path_length(G, via, dst)
+                if not 1 <= d2 <= 2 or d1 + d2 < min_len:
+                    continue
+                if _sig("walk", src, dst) in used or \
+                        _sig("via", src, via, dst) in used:
+                    continue
+                # the waypoint must force a real reroute: if every natural
+                # (shortest) route already passes through it, the
+                # constraint is a checkbox, not a decision
+                if via in nx.shortest_path(G, src, dst):
+                    continue
+                example = (nx.shortest_path(G, src, via)
+                           + nx.shortest_path(G, via, dst)[1:])
+                used.add(_sig("via", zone_id))
+                used.add(_sig("via", src, via, dst))
+                used.add(_sig("walk", src, dst))  # no duplicate plain walk
+                _q(world, zone_id, "via", "walk",
+                   f"The inspection tour. Walk a top-level import chain "
+                   f"from {src} all the way to {dst} - but protocol says "
+                   f"the tour MUST pass through {via} on the way. "
+                   f"answer <module> <module> ... (start at {src}, "
+                   f"end at {dst}, {via} somewhere between).",
+                   {"src": src, "dst": dst, "via": via, "example": example},
+                   xp=10 * (len(example)), distance=len(example))
+                return 1
+    return 0
+
+
+def gen_order(world: World, G: nx.DiGraph, zone_id: str,
+              used: set | None = None) -> int:
+    """Migration order: rewrite bottom-up - any valid dependency-respecting
+    order is accepted, verified topologically."""
+    from itertools import combinations
+    zone = world.zones[zone_id]
+    used = used if used is not None else set()
+    if _sig("order", zone_id) in used:
+        return 0
+    members = [m for m in zone.members if G.has_node(m)]
+    if len(members) > 10:
+        members = sorted(members,
+                         key=lambda m: -world.modules[m].pagerank)[:10]
+    # prefer 5-module instances (harder to eyeball off one edges dump);
+    # fall back to 4. A full chain on k nodes has k*(k-1)/2 transitive
+    # pairs and exactly ONE valid order - copy-the-arrows, no decision -
+    # so the pair count is capped strictly below that. The SECOND order
+    # quest in a world must carry a red herring: a function-level or
+    # type-only import between two of the modules that constrains NOTHING
+    # (a panel solved the repeat by rote; this punishes careless reading).
+    second = any(q.qtype == "order" for q in world.questions.values())
+    for need_herring in ([True, False] if second else [False]):
+        for k, lo, hi in ((5, 4, 8), (4, 3, 5)):
+            for combo in combinations(sorted(members), k):
+                pairs = []
+                mutual = False
+                for u in combo:
+                    for v in combo:
+                        if u == v:
+                            continue
+                        if nx.has_path(G, u, v):
+                            if nx.has_path(G, v, u):
+                                mutual = True
+                            pairs.append((u, v))  # u transitively imports v
+                if mutual or not lo <= len(pairs) <= hi:
+                    continue
+                herring = None
+                if need_herring:
+                    cset = set(combo)
+                    for e in world.edges:
+                        # a lazy/type-only edge u->v whose REAL top-level
+                        # dependency runs the other way: counting the fake
+                        # edge as a constraint yields an INVALID order
+                        if (e.kind != TOP and e.src in cset
+                                and e.dst in cset
+                                and (e.dst, e.src) in pairs):
+                            herring = [e.src, e.dst]
+                            break
+                    if not herring:
+                        continue
+                H = nx.DiGraph()
+                H.add_nodes_from(combo)
+                H.add_edges_from((v, u) for u, v in pairs)  # deps first
+                example = list(nx.topological_sort(H))
+                used.add(_sig("order", zone_id))
+                truth = {"set": sorted(combo),
+                         "pairs": [[u, v] for u, v in pairs],
+                         "example": example}
+                if herring:
+                    truth["herring"] = herring
+                _q(world, zone_id, "order", "order",
+                   f"The migration plan. These {k} modules are being "
+                   f"rewritten: {', '.join(combo)}. Rule: a module may "
+                   f"only be rewritten AFTER everything it imports "
+                   f"(directly or through top-level chains) is already "
+                   f"done. {EDGE_RULE} Several valid orders exist - give "
+                   f"ANY one, dependencies first: answer "
+                   f"{' '.join('<' + str(i + 1) + '>' for i in range(k))}.",
+                   truth, xp=35 if herring else 30, distance=k)
+                return 1
+    return 0
+
 def gen_direction(world: World, zone_id: str, count: int = 2,
                   used: set | None = None) -> int:
     """Small-hive filler: who imports whom? On a scripts-scale repo there
@@ -740,13 +969,20 @@ def generate_questions(world: World) -> None:
     # generous caps: the bracketing gate (buzz calibrate) prunes shallow
     # and broken questions afterward, so generation runs wide - scaled so a
     # big repo's post-calibration world isn't clearable at 5% coverage
-    # region tightened 6 -> 4: by the fifth blast radius panels reported
-    # re-running the same worksheet, not learning
-    CAPS = {"cycle": 2, "region": 4, "hub": 3, "ghost": 8, "gate": 6,
+    # measurement templates tightened round over round: by the fourth
+    # blast radius / second hub, panels report re-running a worksheet
+    CAPS = {"cycle": 2, "region": 3, "hub": 2, "ghost": 8, "gate": 6,
             "place": 5, "elder": 5, "hotspot": 5, "patch": 6, "scar": 3}
 
     def capped(qt: str) -> bool:
         return count(qt) >= CAPS.get(qt, 99)
+
+    # non-boss walks are budgeted per WORLD, not per zone: three panels
+    # running found a walk (and often two) in literally every district
+    WALK_BUDGET = 6
+
+    def walk_left(want: int) -> int:
+        return max(0, min(want, WALK_BUDGET - count("walk")))
 
     for z in sorted(world.zones.values(), key=lambda z: z.order):
         n = 0
@@ -760,13 +996,15 @@ def generate_questions(world: World) -> None:
                 n += gen_ghost(world, z.id, used=used)
             if not capped("patch"):
                 n += gen_patch(world, z.id, used=used)
-            n += gen_walk(world, Gtop, z.id, count=3, used=used)
+            if walk_left(3):
+                n += gen_walk(world, Gtop, z.id, count=walk_left(3), used=used)
             if not capped("region"):
                 n += gen_region(world, Gtop, z.id, used=used)
             if not capped("hub"):
                 n += gen_hub(world, Gtop, z.id, used=used)
         elif mix == 1:
-            n += gen_walk(world, Gtop, z.id, count=2, used=used)
+            if walk_left(2):
+                n += gen_walk(world, Gtop, z.id, count=walk_left(2), used=used)
             n += gen_detour(world, Gtop, z.id, used=used)
             if not capped("gate"):
                 n += gen_gate(world, Gtop, z.id, used=used)
@@ -790,8 +1028,33 @@ def generate_questions(world: World) -> None:
                 n += gen_patch(world, z.id, used=used)
             if not capped("hub"):
                 n += gen_hub(world, Gtop, z.id, used=used)
-            if n < 3:
+            if n < 3 and walk_left(1):
                 n += gen_walk(world, Gtop, z.id, count=1, used=used)
+        # the decision tier: later districts escalate to judgement calls
+        # (safest deletion, best refactor, migration order, routed walks)
+        # instead of re-running the measurement templates - the panels'
+        # top structural ask two rounds running
+        if z.order >= 2:
+            DCAPS = {"cut": 3, "refactor": 3, "via": 3, "order": 3}
+            dgens = [
+                ("refactor", lambda: gen_refactor(world, Gtop, z.id, used=used)),
+                ("cut", lambda: gen_cut(world, Gtop, z.id, used=used)),
+                ("order", lambda: gen_order(world, Gtop, z.id, used=used)),
+                ("via", lambda: gen_via(world, Gtop, z.id, used=used)),
+            ]
+            # fill whichever decision type is globally scarcest first, so
+            # every type shows up across a world instead of the rotation
+            # starving one of them
+            ranked = sorted(enumerate(dgens),
+                            key=lambda iv: (count(iv[1][0]),
+                                            (iv[0] - z.order) % 4))
+            made_d = 0
+            for _, (qt, fn) in ranked:
+                if made_d >= 2:
+                    break
+                if count(qt) < DCAPS[qt]:
+                    made_d += fn()
+            n += made_d
         # top up thin zones only
         if n < 4 and not capped("elder"):
             n += gen_elder(world, z.id, used=used)
@@ -805,7 +1068,8 @@ def generate_questions(world: World) -> None:
             if n < 3:
                 n += gen_direction(world, z.id, count=3 - n, used=used)
         if n < 3:  # thin zone: top up so it stays clearable and worthwhile
-            n += gen_walk(world, Gtop, z.id, count=1, used=used)
+            if walk_left(1):
+                n += gen_walk(world, Gtop, z.id, count=1, used=used)
             if not capped("ghost"):
                 gen_ghost(world, z.id, used=used)
 
