@@ -97,7 +97,8 @@ Wrong answers cost nothing - they reveal the truth.
 You wake up at {world.start}.
 """)
     print(render.render_map(world, s))
-    print("\ntry next: buzz look   (then: buzz quests)")
+    print("\ntry next: buzz look   (then: buzz quests · 'tui' opens the "
+          "walkable map screen)")
 
 
 def _try_next(world: World, s: Session) -> str:
@@ -132,9 +133,25 @@ def _enter_shell(world: World, s: Session) -> None:
 def main(argv: list[str] | None = None) -> None:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args:
-        # bare `buzz` on a real terminal: drop straight into the game
-        if sys.stdin.isatty() and (game_dir() / "world.json").exists() \
-                and session_path().exists():
+        # bare `buzz` on a real terminal: drop straight into the game -
+        # and when the game isn't set up yet, say the ONE next step
+        # instead of a wall of help (a dogfooder asked "analyze, play,
+        # or tui?" - the entry point should answer that itself)
+        if sys.stdin.isatty():
+            if not (game_dir() / "world.json").exists():
+                print("no world in this directory yet.\n"
+                      "  step 1:  buzz analyze <repo-path>   (once per "
+                      "repo; add --lore for the semantic layer)\n"
+                      "  step 2:  buzz play                  (starts your "
+                      "run)\n"
+                      "full reference: buzz help")
+                return
+            if not session_path().exists():
+                print("world found, but no session yet - start one:\n"
+                      "  buzz play\n"
+                      "(then everything happens at the buzz> prompt; "
+                      "'tui' there opens the map screen)")
+                return
             world = load_world()
             s = load_session(world)
             _enter_shell(world, s)
