@@ -24,7 +24,7 @@ def anchor_files(world: World, q: Question) -> list[str]:
     """What the weak (local-context-only) solver is allowed to read."""
     t = q.truth
     mods: list[str] = []
-    if q.qtype in ("walk", "detour", "ghost"):
+    if q.qtype in ("walk", "detour", "ghost", "via"):
         mods = [t["src"]]
     elif q.qtype == "cycle":
         mods = [t["lazy_src"]]
