@@ -183,7 +183,8 @@ def main(argv: list[str] | None = None) -> None:
         s = load_session(world)
         from .overworld import run_overworld
         try:
-            run_overworld(world, s, lambda sess: sess.save(session_path()))
+            run_overworld(world, s, lambda sess: sess.save(session_path()),
+                          sessions_dir=game_dir() / "sessions")
         except GameError as e:
             raise SystemExit(f"! {e}")
         return

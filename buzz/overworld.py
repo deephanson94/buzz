@@ -50,6 +50,71 @@ ROLE_GLYPH = {ROLE_BOSS: "B", ROLE_BEDROCK: "#", ROLE_GATE: "%",
               ROLE_SWAMP: "~"}
 
 
+def _whisper(world: World, s: Session, m: str) -> str | None:
+    """One TRUE fact about the tile the bee stands on - the tall-grass
+    encounter. Every fact mirrors something look/probe/chronicle already
+    expose freely; anything an OPEN quest hangs on stays withheld."""
+    if m in s.whispers or m not in s.seen:
+        return None
+    mod = world.modules[m]
+    zid = mod.zone
+
+    def quest_open(pred):
+        return any(pred(q) for q in world.questions.values()
+                   if q.id not in s.resolved)
+
+    facts = []
+    if mod.born:
+        facts.append(f"the old bees say {m} was built {mod.born} - "
+                     + ("an elder of this district"
+                        if mod.commits >= 10 else "still young timber"))
+    if mod.in_degree >= 3:
+        facts.append(f"{mod.in_degree} modules lean on this wall - "
+                     f"tread carefully when it moves")
+    if mod.commits >= 8:
+        facts.append(f"storm-worn: {mod.commits} commits by "
+                     f"{mod.authors} author(s) have reshaped this place")
+    top = next(iter(world.cochange.get(m, [])), None)
+    ghost_or_patch_open = quest_open(
+        lambda q: (q.qtype == "ghost" and (q.truth.get("src") == m
+                   or m in (q.truth.get("accepted") or [])))
+        or (q.qtype == "patch" and m in (q.truth.get("anchor"),
+                                         q.truth.get("module"))))
+    if top and not ghost_or_patch_open:
+        facts.append(f"git whispers: {m} and {top[0]} moved together "
+                     f"{top[1]} times")
+    scar_open = quest_open(lambda q: q.qtype == "scar"
+                           and q.truth.get("module") == m)
+    if any(m in ev.get("mods", []) for ev in world.reverts) and not scar_open:
+        facts.append(f"a scar: something here was once rolled back - "
+                     f"the chronicle remembers")
+    if mod.doc:
+        facts.append(f'the residents describe it: "{mod.doc}"')
+    if not facts:
+        return None
+    s.whispers.append(m)
+    return "~ " + facts[len(s.whispers) % len(facts)]
+
+
+def _other_scouts(world: World, s: Session, sessions_dir):
+    """Fellow bees: other sessions' positions on the shared world."""
+    out = {}
+    if not sessions_dir:
+        return out
+    from .model import Session as _S
+    try:
+        for p in sorted(sessions_dir.glob("*.json")):
+            try:
+                other = _S.load(p)
+            except Exception:
+                continue
+            if other.here != s.here and other.here in world.modules:
+                out.setdefault(other.here, []).append(p.stem)
+    except OSError:
+        pass
+    return out
+
+
 def _quest_marks(world: World, s: Session):
     """Tiles worth walking to: modules OPEN quests name in their prompts
     (sources, anchors, targets - never hidden answers), plus per-zone open
@@ -151,7 +216,7 @@ def _overlay(scr, lines, title=""):
             return k in (ord("Q"), 27)
 
 
-def _main(scr, world: World, s: Session, save):
+def _main(scr, world: World, s: Session, save, sessions_dir=None):
     curses.curs_set(0)
     curses.use_default_colors()
     for i, c in [(1, curses.COLOR_YELLOW), (2, curses.COLOR_BLUE),
@@ -175,6 +240,15 @@ def _main(scr, world: World, s: Session, save):
     while True:
         _draw_map(pad, world, s, rooms, tiles)
         maxy, maxx = scr.getmaxyx()
+        others = _other_scouts(world, s, sessions_dir)
+        for om, names in others.items():
+            if om in tiles and om in s.seen:
+                ox, oy = tiles[om]
+                try:
+                    pad.addstr(oy, max(0, ox - 1), "b",
+                               curses.A_DIM | curses.color_pair(4))
+                except curses.error:
+                    pass
         here_m = tile_at(*bee)
         # the bee perches BESIDE a tile's label, never on it (a panel saw
         # '@ire' where 'wire' should be - sprite and text fighting a cell)
@@ -202,6 +276,8 @@ def _main(scr, world: World, s: Session, save):
             info = f"{here_m} [{mod.role}]"
             if here_m in marks:
                 info += " · an open quest names this module ('e' to read)"
+            if here_m in others:
+                info += f" · scout {others[here_m][0]} is here too"
             info += (" - Enter travels, l looks" if here_m != s.here
                      else " - you are here (l looks)")
         elif here_m:
@@ -214,8 +290,11 @@ def _main(scr, world: World, s: Session, save):
             info = (f"{n} open quest{'s' if n != 1 else ''} in this "
                     f"district - 'e' lists them, ! tiles are named by them"
                     if n else "")
-        scr.addstr(maxy - 1, 0, (msg if not info else info)[: maxx - 1],
-                   curses.A_DIM)
+        line = msg or info
+        attr = (curses.color_pair(5) | curses.A_BOLD
+                if msg.startswith("~") else curses.A_DIM)
+        scr.addstr(maxy - 1, 0, line[: maxx - 1], attr)
+        msg = ""  # events flash once; ambient info returns next frame
         scr.refresh()
 
         k = scr.getch()
@@ -246,7 +325,11 @@ def _main(scr, world: World, s: Session, save):
             try:
                 how = engine.go(world, s, here_m)
                 save(s)
-                msg = f"[{how}] arrived at {s.here} - fog updates on the map"
+                whisper = _whisper(world, s, s.here)
+                msg = (whisper if whisper
+                       else f"[{how}] arrived at {s.here}")
+                if whisper:
+                    save(s)
             except GameError as e:
                 msg = f"! {e}"
         elif k == ord("l") and here_m:
@@ -285,10 +368,10 @@ def _main(scr, world: World, s: Session, save):
                 return
 
 
-def run_overworld(world: World, s: Session, save) -> None:
+def run_overworld(world: World, s: Session, save, sessions_dir=None) -> None:
     import sys
     if not sys.stdout.isatty():
         raise GameError("the overworld needs a real terminal - it is a "
                         "screen, not a stream (agents and pipes keep the "
                         "one-shot commands)")
-    curses.wrapper(_main, world, s, save)
+    curses.wrapper(_main, world, s, save, sessions_dir)
