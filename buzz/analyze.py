@@ -389,6 +389,10 @@ def analyze(repo: Path) -> World:
         cc[b].append([a, n])
     world.cochange = {m: sorted(v, key=lambda x: -x[1])[:10] for m, v in cc.items()}
 
+    # the flow tier's ground truth: where the work actually goes at runtime
+    from .flow import extract_calls
+    world.calls, world.entries = extract_calls(files, resolve, names)
+
     # start: most out-degree in the first zone (the file that reads the most
     # of the hive — best vantage point)
     first = min(world.zones.values(), key=lambda z: z.order)

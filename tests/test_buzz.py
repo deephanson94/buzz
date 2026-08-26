@@ -666,3 +666,47 @@ def test_model_roundtrip_with_lore_fields(tmp_path):
     w2 = World.load(p)
     assert w2.modules["a"].gloss == "impression"
     assert w2.zones["z1"].brief == "a brief"
+
+
+def test_flow_extraction_and_journey(tmp_path):
+    import subprocess as sp
+    root = tmp_path / "flowrepo"
+    (root / "app").mkdir(parents=True)
+    files = {
+        "app/__init__.py": "",
+        "app/cli.py": ("from .engine import run_job\n"
+                       "def main():\n    run_job('x')\n"
+                       "if __name__ == '__main__':\n    main()\n"),
+        "app/engine.py": ("from .store import save\nimport app.codec as codec\n"
+                          "def run_job(x):\n"
+                          "    save(codec.encode(x))\n"),
+        "app/codec.py": "def encode(x):\n    return x\n",
+        "app/store.py": ("from .codec import encode\n"
+                         "def save(x):\n    return x\n"),  # import, NO call
+        "app/extra.py": "import os\n",
+    }
+    for rel, content in files.items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(content)
+    sp.run(["git", "init", "-q"], cwd=root, check=True)
+    sp.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "add", "."],
+           cwd=root, check=True)
+    sp.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit",
+            "-qm", "init"], cwd=root, check=True)
+    w = analyze(root)
+    calls = {(c["src"], c["dst"]): c["via"] for c in w.calls}
+    assert ("cli", "engine") in calls and "run_job" in calls[("cli", "engine")]
+    assert ("engine", "store") in calls        # from-import symbol call
+    assert ("engine", "codec") in calls        # module-alias attribute call
+    assert ("store", "codec") not in calls     # import without a call
+    assert "cli" in w.entries                  # __main__ guard detected
+    generate_questions(w)
+    j = next((q for q in w.questions.values() if q.qtype == "journey"), None)
+    assert j and j.truth["src"] == "cli"
+    s = engine.new_session(w)
+    # an import-only hop is rejected with the teaching message
+    r = engine.answer(w, s, j.id, "walk",
+                      ["cli", "engine", "store", "codec"])
+    assert not r.get("correct") and "CALLS" in (r.get("note") or "")
+    r2 = engine.answer(w, s, j.id, "walk", j.truth["example"])
+    assert r2["correct"] and "the work travels" in r2["explain"]

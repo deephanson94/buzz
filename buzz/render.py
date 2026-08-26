@@ -205,6 +205,7 @@ def render_question(world: World, s: Session, q) -> str:
         "ghost": "<one-of-the-pair> <the-other>",
         "refactor": "<importer> <imported>",
         "walk": "<module> <module> ... (a chain, one import per hop)",
+        "journey": "<module> <module> ... (each hop a real function CALL)",
         "region": "<module> <module> ... (the whole affected set)",
         "place": "<district-id-or-name>",
         "order": "<first> <second> ... (dependencies first)",
@@ -399,6 +400,9 @@ GLOSSARY = """the hive's words, in plain language:
   chronicle       one file's commit history, from git.
   blast radius    everything that (transitively) imports a file - what
                   could break when it changes.
+  flow / journey  where the WORK goes at runtime: real function calls
+                  between modules. An import without a call carries no
+                  work - 'buzz flow <m>' shows a read file's calls.
   ghost edge      two files with NO import between them that git shows
                   changing together constantly - hidden coupling.
   boss            the repo's center of gravity: highest churn x

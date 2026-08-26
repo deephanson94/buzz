@@ -330,6 +330,19 @@ def _check_walk(world: World, s: Session, q: Question, path: list[str]) -> tuple
     avoid = t.get("avoid")
     if avoid and avoid in path:
         return False, f"your route touches {avoid} - the whole point is to go around it"
+    if t.get("flow"):  # journey: hops are function CALLS, not imports
+        callset = {(c["src"], c["dst"]) for c in world.calls}
+        for a, b in zip(path, path[1:]):
+            if (a, b) not in callset:
+                if world.has_edge(a, b):
+                    return False, (f"{a} imports {b}, but no work flows "
+                                   f"there - this journey needs hops where "
+                                   f"{a} actually CALLS into {b}")
+                return False, (f"no call from {a} into {b} at that step - "
+                               f"you may be following IMPORT reachability, "
+                               f"but a journey follows CALLS: 'buzz flow "
+                               f"{a}' shows where its work actually goes")
+        return True, ""
 
     def hop_ok(a: str, b: str) -> bool:
         if world.has_edge(a, b, kinds=allowed):
@@ -473,8 +486,19 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
     if correct and q.verb == "walk":
         # confirm THEIR chain, not a different valid one - the game agreeing
         # with you should never read like a correction
-        result["explain"] = "your chain checks out: " + " -> ".join(
-            resolve_module(world, a) for a in args)
+        theirs = [resolve_module(world, a) for a in args]
+        if q.truth.get("flow"):
+            # a journey's reveal names the functions that carry the work
+            legs = []
+            for a, b in zip(theirs, theirs[1:]):
+                rec = next((c for c in world.calls
+                            if c["src"] == a and c["dst"] == b), None)
+                fns = "/".join(rec["via"][:2]) if rec and rec.get("via") else "?"
+                legs.append(f"{a} -({fns})->")
+            result["explain"] = ("the work travels: " + " ".join(legs)
+                                 + " " + theirs[-1])
+        else:
+            result["explain"] = "your chain checks out: " + " -> ".join(theirs)
 
     if correct:
         s.resolved[q.id] = "correct"
@@ -718,6 +742,44 @@ def probe(world: World, a: str, b: str) -> str:
         lines.append(f"focused commits moving BOTH in one patch: {len(pair)}"
                      f"  (dates: {dates}{', …' if len(pair) > 4 else ''})")
     return "\n".join(lines)
+
+
+def flow(world: World, s: Session, name: str) -> list[str]:
+    """Who does this module CALL into at runtime, and who calls into it?
+    Reading calls means reading the file, so it requires a module you have
+    already read (visited or spyglassed)."""
+    m = resolve_module(world, name)
+    if m not in s.discovered:
+        raise GameError(f"you have not read {m} yet - 'buzz look {m}' "
+                        f"(if you can see it) or fly there first")
+    outs = [c for c in world.calls if c["src"] == m]
+    ins = [c for c in world.calls if c["dst"] == m]
+    lines = [f"where {m}'s work goes (function calls, not just imports):"]
+    import re as _re
+    for c in sorted(outs, key=lambda c: c["dst"]):
+        _name_seen(s, c["dst"])
+        seam = any(_re.match(r"(get_|lookup|resolve|make_|create_|factory)",
+                             v) for v in c["via"]) or "registry" in c["dst"]
+        lines.append(f"  calls into {c['dst']}  ({', '.join(c['via'])})"
+                     + ("  <- a lookup seam: the concrete callee is chosen "
+                        "at RUNTIME - static analysis stops here"
+                        if seam else ""))
+    if not outs:
+        lines.append("  (no cross-module calls detected - work stays home)")
+    called = {c["dst"] for c in outs}
+    idle = sorted(e.dst for e in world.out_edges(m) if e.dst not in called)
+    if idle:
+        lines.append(f"  imported but never called: {', '.join(idle)}  "
+                     f"(referenced only as values, or dispatched "
+                     f"dynamically - no direct call found)")
+    if ins:
+        lines.append(f"who sends work INTO {m}:")
+        for c in sorted(ins, key=lambda c: c["src"]):
+            _name_seen(s, c["src"])
+            lines.append(f"  {c['src']} calls  ({', '.join(c['via'])})")
+    lines.append("(conservative static analysis: only unambiguous direct "
+                 "calls are recorded - dynamic dispatch stays invisible)")
+    return lines
 
 
 def trace(world: World, s: Session, path: list[str]) -> list[str]:
