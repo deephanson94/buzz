@@ -238,6 +238,20 @@ def render_question(world: World, s: Session, q) -> str:
     return "\n".join(lines)
 
 
+def _badge_line(world: World, s: Session) -> str:
+    from .badges import earned
+    got = ", ".join(name for name, _ in earned(world, s))
+    line = f"badges: {got or 'none yet'}"
+    if s.exam.get("best"):
+        line += f" | exam best: {s.exam['best']}% retention"
+    from .exam import in_progress
+    if in_progress(s):
+        e = s.exam
+        line += (f"\nEXAM IN PROGRESS [{e['idx'] + 1}"
+                 f"/{len(e['qids'])}] - 'buzz exam' shows the question")
+    return line
+
+
 def render_status(world: World, s: Session) -> str:
     d, total = coverage(world, s)
     solved = sum(1 for v in s.resolved.values() if v == "correct")
@@ -266,6 +280,7 @@ def render_status(world: World, s: Session) -> str:
         + (f" (+{min(50, 5 * s.streak)}% XP on the next clean solve)"
            if s.streak else " (first-try, hint-free solves build a bonus)"),
         f"abilities: {', '.join(s.abilities) or 'none yet'}",
+        _badge_line(world, s),
         "boss lair: " + (
             "CLEARED" if (boss_qs := [q for q in world.questions.values() if q.boss])
             and all(q.id in s.resolved for q in boss_qs)
@@ -361,6 +376,11 @@ quests (the only source of XP):
   buzz hint <id>               oracle hint ladder (costs XP; 3rd hint reveals)
 
   buzz status                  XP, rank, abilities, victory progress
+  buzz exam                    after 4+ solves: re-answer your oldest
+                               solves from memory - no tools, 0 XP, a
+                               retention score and a title
+  buzz badges                  earned honors, computed from what you
+                               actually did (never bought with XP)
 
 Edge kinds matter: `>` top-level imports always run; `#` sealed tunnels are
 function-level imports (walkable after a cycle quest unlocks tunnel-vision);
@@ -419,5 +439,16 @@ GLOSSARY = """the hive's words, in plain language:
   streak          consecutive clean solves: +5% XP each, halves on a miss.
   scout's         a one-liner written by an AI, clearly marked, worth
   impression      0 XP - flavor, never ground truth.
+  wanted poster   the daily mystery: one module described only by its
+                  mechanical shape (degrees, size, age). 3 guesses,
+                  misses sharpen the poster, a capture pays a bounty.
+  onboarding      'buzz export' bundles the atlas + field notes into a
+  pack            directory you can hand to the next person who joins
+                  the codebase.
+  exam            a recall run over quests you already solved - oldest
+                  first, no tools, one attempt each, 0 XP. The score is
+                  retention; only your best is kept.
+  badge           an earned honor computed from what your session did.
+                  Never worth XP, never mintable by command spam.
 
 (back to the moves: help)"""

@@ -150,11 +150,14 @@ class Session:
     tries: dict[str, int] = field(default_factory=dict)     # qid -> extra region attempts used
     followups: dict[str, dict] = field(default_factory=dict)  # dynamically spawned questions
     whispers: list = field(default_factory=list)  # overworld facts already heard
+    best_streak: int = 0      # high-water mark, for the Streak Lord badge
+    exam: dict = field(default_factory=dict)  # recall-run state + best score
     cleared: list[str] = field(default_factory=list)        # zone ids
     streak: int = 0             # consecutive first-try, hint-free solves
     boss_open: bool = False
     victory: bool = False
     log: list[str] = field(default_factory=list)
+    wanted: dict = field(default_factory=dict)   # daily mystery: date/guesses/done/won
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

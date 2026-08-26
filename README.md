@@ -26,6 +26,9 @@ OVERWORLD: a top-down map screen where your bee walks the districts with
 the arrow keys and the fog lifts tile by tile (Enter travels, l looks,
 e lists quests - answers stay in the shell). Every command also works
 one-shot (`buzz map`, `buzz answer q3 ...`) for pipes, agents, and CI.
+`buzz wanted` posts a daily mystery module - three guesses from its
+mechanical silhouette. `buzz export` bundles the atlas and field notes
+into an onboarding pack you can hand to the next person.
 
 State lives in `./.buzz/` (`BUZZ_SESSION=<name>` for parallel sessions
 sharing one world - `buzz standings` is the leaderboard across them -

@@ -260,6 +260,7 @@ def _award(s: Session, q: Question, frac: float) -> int:
     # erasing it (a panel found hard resets punished guess-heavy quest
     # types out of proportion)
     s.streak = s.streak + 1 if clean else s.streak // 2
+    s.best_streak = max(s.best_streak, s.streak)
     return gained
 
 

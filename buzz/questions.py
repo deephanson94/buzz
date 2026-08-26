@@ -683,8 +683,9 @@ def gen_refactor(world: World, G: nx.DiGraph, zone_id: str,
                f"time. {w1}, {w2} and {w3} each import {x} top-level, and "
                f"each owner proposes severing THEIR import to shrink {x}'s "
                f"blast radius (today: {base} modules reach {x} through "
-               f"always-run chains). All three cuts change something - but "
-               f"not equally. Which single severed import shrinks the "
+               f"always-run chains). The cuts are NOT equal - and a "
+               f"redundant route may change nothing at all. Which "
+               f"single severed import shrinks the "
                f"radius MOST? {EDGE_RULE} Answer with that edge: "
                f"answer <importer> {x}.",
                {"src": w1, "dst": x, "loser": w3, "base": base,

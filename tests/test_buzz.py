@@ -851,3 +851,163 @@ def test_session_roundtrip_with_whispers(tmp_path):
     s.save(p)
     s2 = Session.load(p)
     assert s2.whispers == ["a", "b"]
+def test_wanted_daily(world):
+    from buzz import wanted
+    s = engine.new_session(world)
+    date, target = wanted.pick(world, "2026-08-26")
+    d2, t2 = wanted.pick(world, "2026-08-26")
+    assert (date, target) == (d2, t2)          # deterministic
+    assert target in world.modules
+    # the poster never names the fugitive
+    assert all(target not in ln for ln in wanted.poster(world, target))
+    xp0 = s.xp
+    # a typo spends no guess
+    out = wanted.play(world, s, "no.such.module")
+    assert "free" in out[0] and not s.wanted.get("guesses")
+    # wrong real guess: costs a guess, sharpens the poster, no XP change
+    wrong = next(n for n in sorted(world.modules) if n != target)
+    out = wanted.play(world, s, wrong)
+    assert len(s.wanted["guesses"]) == 1 and s.xp == xp0
+    # correct guess pays the bounty exactly once
+    out = wanted.play(world, s, target)
+    assert s.wanted["won"] and s.xp == xp0 + wanted.BOUNTY
+    out = wanted.play(world, s, target)
+    assert "already" in out[0] and s.xp == xp0 + wanted.BOUNTY
+    # roundtrip: the wanted dict survives save/load
+    import json as _json
+    from dataclasses import asdict
+    from buzz.model import Session
+    s2 = Session(**_json.loads(_json.dumps(asdict(s))))
+    assert s2.wanted["won"]
+
+
+def test_wanted_exhaust_reveals_costs_nothing(world):
+    from buzz import wanted
+    s = engine.new_session(world)
+    _, target = wanted.pick(world)
+    xp0 = s.xp
+    wrongs = [n for n in sorted(world.modules) if n != target]
+    for g in wrongs[: wanted.MAX_GUESSES]:
+        out = wanted.play(world, s, g)
+    assert s.wanted["done"] and not s.wanted["won"]
+    assert target in out[-1]                   # revealed on the cold trail
+    assert s.xp == xp0                         # nothing lost (rule 12)
+
+
+def test_export_pack(world, tmp_path):
+    from buzz.export import export
+    s = engine.new_session(world)
+    out, files = export(world, s, tmp_path)
+    assert (out / "index.md").exists()
+    assert (out / "atlas.html").exists()
+    assert (out / "field_notes.md").exists()
+    idx = (out / "index.md").read_text()
+    assert "atlas.html" in idx and "field_notes.md" in idx
+    assert world.sha[:10] in idx
+
+def test_exam_flow(world):
+    from buzz import exam
+    s = engine.new_session(world)
+    with pytest.raises(engine.GameError):
+        exam.start(world, s)   # nothing solved yet
+    # solve enough quests honestly to open the exam
+    solved = 0
+    for q in list(world.questions.values()):
+        if solved >= 4 or q.boss:
+            continue
+        t = q.truth
+        try:
+            if q.verb == "walk":
+                r = engine.answer(world, s, q.id, "walk", t["example"])
+            elif q.verb == "point":
+                r = engine.answer(world, s, q.id, "point", [t["module"]])
+            elif q.verb == "edge" and "dst" in t:
+                r = engine.answer(world, s, q.id, "edge", [t["src"], t["dst"]])
+            elif q.verb == "region":
+                r = engine.answer(world, s, q.id, "region", t["region"])
+            else:
+                continue
+        except engine.GameError:
+            continue
+        if r.get("correct"):
+            solved += 1
+    if solved < 4:
+        pytest.skip("fixture too small to open the exam")
+    r = exam.start(world, s)
+    total = r["total"]
+    xp_before = s.xp
+    # answer every exam question correctly from truth
+    for _ in range(total):
+        q = exam.current(world, s)
+        t = q.truth
+        args = (t["example"] if q.verb == "walk"
+                else [t["module"]] if q.verb == "point"
+                else [t["src"], t["dst"]] if q.verb == "edge"
+                else t["region"])
+        res = exam.grade(world, s, args)
+    assert res["done"] and res["pct"] == 100 and res["title"] == "Elder Sage"
+    assert s.xp == xp_before          # the exam pays nothing
+    assert s.exam["best"] == 100
+
+
+def test_exam_resumes_and_teaches_on_miss(world):
+    from buzz import exam
+    s = engine.new_session(world)
+    # seed 4 correct solves directly (grading tolerates a full map)
+    qids = [q.id for q in world.questions.values() if not q.boss][:5]
+    if len(qids) < 4:
+        pytest.skip("fixture too small")
+    s.resolved = {q: "correct" for q in qids}
+    r1 = exam.start(world, s)
+    assert not r1["resumed"]
+    # the sample is OLDEST solves first, not newest
+    assert s.exam["qids"][0] == qids[0]
+    first = exam.current(world, s)
+    # a wrong answer reports the truth so the miss teaches on the spot
+    res = exam.grade(world, s, ["definitely-not-the-answer"])
+    assert not res["ok"] and res["truth"]
+    # bare exam mid-run RESUMES at the next item - it never restarts
+    r2 = exam.start(world, s)
+    assert r2["resumed"] and r2["i"] == 1
+    assert exam.current(world, s).id != first.id or len(qids) == 1
+    assert s.exam["missed"] == [first.id]   # the attempt survived
+    # tool-coaching sentences are stripped from the exam's re-print
+    for qid in s.exam["qids"]:
+        assert "'buzz " not in exam.clean_prompt(world.questions[qid])
+
+
+def test_badges_earned(world):
+    from buzz.badges import earned, progress, MIN_CLASS
+    s = engine.new_session(world)
+    assert not earned(world, s)          # nothing done, nothing minted
+    # command spam mints nothing: reading/seeing everything is not a badge
+    s.discovered = list(world.modules)
+    s.seen = list(world.modules)
+    assert not earned(world, s)
+    # the first correct solve mints First Nectar
+    s.resolved["q1"] = "correct"
+    assert "First Nectar" in [n for n, _ in earned(world, s)]
+    s.best_streak = 10
+    assert "Streak Lord" in [n for n, _ in earned(world, s)]
+    # a perfect exam mints Elder Sage; 88% does not
+    s.exam = {"best": 88}
+    assert "Elder Sage" not in [n for n, _ in earned(world, s)]
+    s.exam = {"best": 100}
+    assert "Elder Sage" in [n for n, _ in earned(world, s)]
+    # class badges refuse to mint when the world has too few instances,
+    # and say so in their progress note
+    for name, desc, ok, note in progress(world, s):
+        if name == "Ghost Hunter":
+            n_ghost = sum(1 for q in world.questions.values()
+                          if q.qtype == "ghost")
+            if n_ghost < MIN_CLASS:
+                assert not ok and "needs" in note
+    # Clean Sweep needs EVERY quest correct, not just the boss path
+    s.hints = {}
+    s.tries = {}
+    s.victory = True
+    some = list(world.questions)[: len(world.questions) // 2]
+    s.resolved = {q: "correct" for q in some}
+    assert "Clean Sweep" not in [n for n, _ in earned(world, s)]
+    s.resolved = {q: "correct" for q in world.questions}
+    assert "Clean Sweep" in [n for n, _ in earned(world, s)]
