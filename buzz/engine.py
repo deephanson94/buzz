@@ -288,6 +288,11 @@ def _explain(world: World, q: Question) -> str:
     if q.qtype == "scar":
         return (f"{t['module']} bears the scar: \"{t['subject']}\" "
                 f"({t['date']}) was rolled back")
+    if q.qtype == "lore":
+        doc = world.modules[t["module"]].doc
+        return (f"{t['module']} is where it lives"
+                + (f": {t['why']}" if t.get("why") else "")
+                + (f' ("{doc}")' if doc else ""))
     if q.qtype == "hotspot":
         return (f"{t['module']} is the hotspot: {t['commits']} commits of "
                 f"rework, more than anything else in the district")
@@ -575,6 +580,8 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
                     f"{world.zones[world.modules[t['module']].zone].name}")
         elif q.qtype == "scar":
             text = "git log is your shovel: search the subjects for 'Revert'"
+        elif q.qtype == "lore":
+            text = t.get("hint") or "open the suspects' files - skim their classes"
         else:
             text = f"read {t['src']}'s imports"
         s.hints[q.id] = 1
@@ -605,7 +612,7 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
         elif q.qtype == "elder":
             text = (f"for the record, one of them entered history "
                     f"{t['born_src']} - decide who that sounds like")
-        elif q.qtype in ("patch", "scar"):
+        elif q.qtype in ("patch", "scar", "lore"):
             text = f"the module's name starts with '{t['module'][0]}'"
         elif q.qtype == "hotspot":
             zid = world.modules[t["module"]].zone
@@ -714,6 +721,8 @@ def reveal_prompt_modules(world: World, s: Session, q: Question) -> None:
         named = [t.get("module")]
     elif q.qtype == "gate":
         named = [t.get("a"), t.get("b")]
+    elif q.qtype in ("lore", "patch"):
+        named = t.get("suspects", []) + [t.get("anchor")]
     # hub names nothing - pointing at it IS the quest
     for m in named:
         if m in world.modules and m not in s.seen:

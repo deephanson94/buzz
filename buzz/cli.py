@@ -136,6 +136,21 @@ def main(argv: list[str] | None = None) -> None:
         else:
             raise SystemExit("usage: buzz calibrate export | apply <results.json>")
         return
+    if cmd == "author":
+        from . import author
+        world = load_world()
+        if rest and rest[0] == "export":
+            p = game_dir() / "author_brief.json"
+            p.write_text(json.dumps(author.export_brief(world), indent=1))
+            print(f"authoring brief written to {p}")
+        elif rest and rest[0] == "apply" and len(rest) == 2:
+            items = json.loads(Path(rest[1]).read_text())
+            summary = author.apply_authored(world, items)
+            world.save(game_dir() / "world.json")
+            print(json.dumps(summary, indent=1))
+        else:
+            raise SystemExit("usage: buzz author export | apply <items.json>")
+        return
     if cmd == "check":
         # calibration grader: no session, no XP, no side effects
         from . import calibrate

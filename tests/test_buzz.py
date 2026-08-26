@@ -447,3 +447,25 @@ def test_patch_and_scar_verbs():
 def test_events_captured(world):
     # fixture repo has focused commits touching base+demo together
     assert isinstance(world.events, list)
+
+
+def test_authored_lore_validation_and_play(world):
+    from buzz import author
+    z = next(iter(world.zones))
+    mods = world.zones[z].members
+    if len(mods) < 4:
+        pytest.skip("zone too small")
+    good = {"zone": z, "prompt": "Which module in this district owns the "
+            "shared low-level primitives every renderer builds on, per its "
+            "class definitions?", "answer": mods[0],
+            "suspects": mods[:4], "lesson": "primitives sit at the bottom",
+            "hint": "look for the class everything subclasses"}
+    leak = dict(good, prompt=f"Which module, named {mods[0]}, owns the "
+                "primitives that everything builds on in this district?")
+    bad_zone = dict(good, zone="z99")
+    r = author.apply_authored(world, [good, leak, bad_zone])
+    assert len(r["added"]) == 1 and len(r["rejected"]) == 2
+    qid = r["added"][0]
+    s = engine.new_session(world)
+    res = engine.answer(world, s, qid, "point", [mods[0]])
+    assert res["correct"] and "where it lives" in res["explain"]

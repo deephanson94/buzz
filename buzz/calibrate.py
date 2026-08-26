@@ -36,7 +36,8 @@ def anchor_files(world: World, q: Question) -> list[str]:
         mods = [t["src"], t["dst"]]
     elif q.qtype == "patch":
         mods = [t["anchor"]]
-    # hub / gate / hotspot / scar: prompt-only - no file answers them locally
+    # hub / gate / hotspot / scar / lore: prompt-only weak pass - if priors
+    # alone answer it, it teaches nothing
     return [world.modules[m].path for m in mods if m in world.modules]
 
 
