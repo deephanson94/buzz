@@ -91,7 +91,10 @@ def _draw_map(pad, world: World, s: Session, rooms, tiles):
             title += f" · {n_open} quest{'s' if n_open > 1 else ''}"
         try:
             pad.addstr(y, x, "+" + "-" * (w - 2) + "+")
-            pad.addstr(y + h - 1, x, "+" + "-" * (w - 2) + "+")
+            bottom = list("+" + "-" * (w - 2) + "+")
+            door = w // 2
+            bottom[door - 1: door + 1] = "  "  # the doorway
+            pad.addstr(y + h - 1, x, "".join(bottom))
             for yy in range(y + 1, y + h - 1):
                 pad.addstr(yy, x, "|")
                 pad.addstr(yy, x + w - 1, "|")
@@ -176,9 +179,13 @@ def _main(scr, world: World, s: Session, save):
         _draw_map(pad, world, s, rooms, tiles)
         maxy, maxx = scr.getmaxyx()
         here_m = tile_at(*bee)
-        # bee on top of the map
+        # the bee perches BESIDE a tile's label, never on it (a panel saw
+        # '@ire' where 'wire' should be - sprite and text fighting a cell)
+        bx, by = bee
+        if here_m:
+            bx = max(0, tiles[here_m][0] - 1)
         try:
-            pad.addstr(bee[1], max(0, bee[0] - 2), "@",
+            pad.addstr(by, bx, "@",
                        curses.A_BOLD | curses.color_pair(1))
         except curses.error:
             pass
@@ -217,14 +224,27 @@ def _main(scr, world: World, s: Session, save):
         k = scr.getch()
         if k in (ord("Q"), 27):
             return
-        elif k in (curses.KEY_LEFT, ord("a")):
-            bee[0] = max(2, bee[0] - 2)
-        elif k in (curses.KEY_RIGHT, ord("d")):
-            bee[0] = min(126, bee[0] + 2)
-        elif k in (curses.KEY_UP, ord("w")):
-            bee[1] = max(1, bee[1] - 1)
-        elif k in (curses.KEY_DOWN, ord("s")):
-            bee[1] = min(height, bee[1] + 1)
+        elif k in (curses.KEY_LEFT, ord("a"), curses.KEY_RIGHT, ord("d"),
+                   curses.KEY_UP, ord("w"), curses.KEY_DOWN, ord("s")):
+            dx = (-2 if k in (curses.KEY_LEFT, ord("a"))
+                  else 2 if k in (curses.KEY_RIGHT, ord("d")) else 0)
+            dy = (-1 if k in (curses.KEY_UP, ord("w"))
+                  else 1 if k in (curses.KEY_DOWN, ord("s")) else 0)
+            nx = max(1, min(127, bee[0] + dx))
+            ny = max(1, min(height, bee[1] + dy))
+            # walls block; doorways (the gap in each bottom wall) pass
+            blocked = False
+            for zid, (x, y, w, h) in rooms.items():
+                on_v = ny in (y, y + h - 1) and x <= nx <= x + w - 1
+                on_h = nx in (x, x + w - 1) and y <= ny <= y + h - 1
+                if on_v or on_h:
+                    door = x + w // 2
+                    if ny == y + h - 1 and door - 1 <= nx <= door:
+                        continue  # through the doorway
+                    blocked = True
+                    break
+            if not blocked:
+                bee[0], bee[1] = nx, ny
         elif k in (curses.KEY_ENTER, 10, 13) and here_m:
             try:
                 how = engine.go(world, s, here_m)
