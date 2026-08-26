@@ -24,6 +24,11 @@ applied between rounds. Passing bar: 8/10 on both.
 | 11 | + trace/chronicle, consistency fixes | 6.83 | 7.83 |
 | 12 | synthetic priors-free repo ("waggle") | 6.33 | 7.83* |
 | 13 | + atlas/recap/standings/aftershock/staged boss (feature round, n=4) | 6.25 | 7.75 |
+| 14 | + interactive shell, HUD, learning beats (UX round, n=3) | **7.33** | 8.00 |
+| 15 | + decision tier v1: cut/refactor/order/via (n=3) | 7.00 | 7.67 |
+| 16 | decision tier reshaped (confirmation, n=2) | 6.50 | 7.50 |
+| 17 | + flow tier: journeys over the call graph (n=2) | 7.00 | 7.50 |
+| 18 | overworld map screen (keep-or-kill, n=2+1) | - | - |
 
 *Round 12 produced the program's deepest individual verdicts (an 8/9 and
 the first 9-learning score) alongside its lowest (4-continue from the
@@ -37,6 +42,18 @@ aftershocks (a confirmed bug), a live "now in" column on standings, a
 repo-overview + surveyed-directory recap, probe-based pre-guess evidence
 for patch quests, soft streak decay (halve, not reset), atlas zone-name
 reveal on first sighting, and a tighter region cap.
+
+Round 14 note: the interactive shell - built from the OWNER's dogfood
+feedback, not panel asks - produced the program's best continue score,
+and the round-17 flow tier its strongest single quotes ("the first time
+the game showed me a request's real path end to end"; the import-vs-call
+rejection was "the single best teaching moment in the whole session").
+Round 18 used purpose/keep-or-kill scoring instead of continue/learning:
+verdict keep-with-changes from both scouts (purpose 4 then 7 as fixes
+landed mid-round - which also produced the methodology's contamination
+lesson, now a /panel rule: pin the code under test for the whole round).
+From round 18c onward, rounds run on the standing roster in
+.claude/agents/ via the /panel skill.
 
 **Learning met the bar** (8.00 across four separate rounds, both repos;
 every claim graph-, git-, or source-checkable). **Continue peaked at 7.17
