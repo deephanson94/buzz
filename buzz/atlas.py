@@ -47,6 +47,123 @@ def _zone_boxes(world: World, width: int = 1500):
     return boxes, positions, height
 
 
+def _layers(world: World) -> dict[str, int]:
+    """Dependency depth over top-level imports: layer 0 imports nothing
+    internal (the foundation); higher layers sit on everything below.
+    Cycles collapse to the same layer."""
+    deps: dict[str, set] = {m: set() for m in world.modules}
+    for e in world.edges:
+        if e.kind == TOP:
+            deps[e.src].add(e.dst)
+    layer: dict[str, int] = {}
+
+    def depth(m, stack):
+        if m in layer:
+            return layer[m]
+        if m in stack:
+            return 0  # cycle: flatten
+        stack.add(m)
+        d = 1 + max((depth(x, stack) for x in deps[m]), default=-1)
+        stack.discard(m)
+        layer[m] = d
+        return d
+
+    for m in world.modules:
+        depth(m, set())
+    return layer
+
+
+def _strata_svg(world: World, s: Session) -> str:
+    """THE STRATA: the classic layered-architecture diagram, earned - only
+    modules you have seen appear; fog stays specks."""
+    seen, disc = set(s.seen), set(s.discovered)
+    layers = _layers(world)
+    by_layer: dict[int, list] = {}
+    for m, l in layers.items():
+        by_layer.setdefault(l, []).append(m)
+    rows = sorted(by_layer.items(), key=lambda kv: -kv[0])  # surface on top
+    parts, y = [], 30
+    width = 1500
+    for l, mods in rows:
+        parts.append(f'<rect x="20" y="{y}" width="{width - 40}" height="46" '
+                     f'rx="8" class="zone"/>')
+        label = ("foundation - imports nothing internal" if l == 0 else
+                 f"layer {l}")
+        parts.append(f'<text x="32" y="{y + 27}" class="ztitle">{label}</text>')
+        x = 260
+        for m in sorted(mods, key=lambda m: -world.modules[m].pagerank):
+            if x > width - 120:
+                break
+            mod = world.modules[m]
+            if m not in seen:
+                parts.append(f'<circle cx="{x}" cy="{y + 23}" r="4" class="fog"/>')
+                x += 18
+                continue
+            color = ROLE_COLOR.get(mod.role, "#8a8a8a")
+            fill = color if m in disc else "none"
+            parts.append(
+                f'<circle class="node" data-m="{html.escape(m)}" cx="{x}" '
+                f'cy="{y + 18}" r="6" fill="{fill}" stroke="{color}"/>')
+            parts.append(f'<text x="{x}" y="{y + 38}" class="mlabel">'
+                         f'{html.escape(m.split(".")[-1][:11])}</text>')
+            x += max(26, 9 * min(11, len(m.split(".")[-1])))
+        y += 56
+    return (f'<h1>THE STRATA - who rests on whom</h1>'
+            f'<div class="legend">the classic layers diagram, computed from '
+            f'always-run imports: everything in a layer can only lean on '
+            f'layers below it. Fog rules apply - keep exploring to fill it '
+            f'in.</div>'
+            f'<svg viewBox="0 0 1500 {y + 10}" '
+            f'xmlns="http://www.w3.org/2000/svg">{"".join(parts)}</svg>')
+
+
+def _journeys_svg(world: World, s: Session) -> str:
+    """Solved journeys render as sequence strips - stations joined by
+    arrows labeled with the functions that carry the work. Unsolved ones
+    stay a teaser: diagrams are earned, not given."""
+    js = [q for q in world.questions.values() if q.qtype == "journey"]
+    if not js:
+        return ""
+    parts, y = [], 26
+    for q in sorted(js, key=lambda q: q.id):
+        t = q.truth
+        if q.id not in s.resolved:
+            parts.append(f'<text x="24" y="{y}" class="ztitle">??? an '
+                         f'untraced journey ({q.id}) - solve it to draw '
+                         f'this diagram</text>')
+            y += 34
+            continue
+        path = t["example"]
+        x = 30
+        for i, m in enumerate(path):
+            w = max(84, 9 * len(m.split(".")[-1]) + 26)
+            parts.append(f'<rect x="{x}" y="{y - 16}" width="{w}" '
+                         f'height="30" rx="7" class="zone"/>')
+            parts.append(f'<text x="{x + w / 2}" y="{y + 4}" class="mlabel" '
+                         f'style="font-size:11px">'
+                         f'{html.escape(m.split(".")[-1][:14])}</text>')
+            if i < len(path) - 1:
+                rec = next((c for c in world.calls if c["src"] == m
+                            and c["dst"] == path[i + 1]), None)
+                fns = "/".join((rec.get("via") or ["?"])[:2]) if rec else "?"
+                parts.append(f'<line x1="{x + w}" y1="{y}" x2="{x + w + 44}" '
+                             f'y2="{y}" class="top" marker-end="url(#arr)"/>')
+                parts.append(f'<text x="{x + w + 22}" y="{y - 8}" '
+                             f'class="mlabel" style="font-size:9px">'
+                             f'{html.escape(fns[:18])}()</text>')
+            x += w + 48
+        y += 52
+    return (f'<h1>THE JOURNEYS - how a run actually flows</h1>'
+            f'<div class="legend">each solved journey becomes a sequence '
+            f'diagram: every arrow is a real function call. This is the '
+            f'runtime story the import map cannot tell.</div>'
+            f'<svg viewBox="0 0 1500 {y}" xmlns="http://www.w3.org/2000/svg">'
+            f'<defs><marker id="arr" markerWidth="8" markerHeight="8" '
+            f'refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6" '
+            f'fill="none" stroke="#6f8f6a"/></marker></defs>'
+            f'{"".join(parts)}</svg>')
+
+
 def render_atlas(world: World, s: Session) -> str:
     boxes, pos, height = _zone_boxes(world)
     d, total = coverage(world, s)
@@ -180,6 +297,8 @@ edges appear once you have read the importing file
 </div>
 <div class="legend">click any visible node for its dossier · regenerate after
 moving: <b>buzz atlas</b></div>
+{_journeys_svg(world, s)}
+{_strata_svg(world, s)}
 <div id="panel" style="display:none"></div>
 <style>
   #panel {{ position:fixed; right:16px; top:16px; max-width:340px;
