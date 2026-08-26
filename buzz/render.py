@@ -419,5 +419,11 @@ GLOSSARY = """the hive's words, in plain language:
   streak          consecutive clean solves: +5% XP each, halves on a miss.
   scout's         a one-liner written by an AI, clearly marked, worth
   impression      0 XP - flavor, never ground truth.
+  wanted poster   the daily mystery: one module described only by its
+                  mechanical shape (degrees, size, age). 3 guesses,
+                  misses sharpen the poster, a capture pays a bounty.
+  onboarding      'buzz export' bundles the atlas + field notes into a
+  pack            directory you can hand to the next person who joins
+                  the codebase.
 
 (back to the moves: help)"""
