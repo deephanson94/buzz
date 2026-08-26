@@ -538,12 +538,15 @@ def gen_gate(world: World, G: nx.DiGraph, zone_id: str,
                 if not accepted or g not in accepted:
                     continue
                 used.add(_sig("gate", zone_id))
+                shown_funnel = sorted(funnel & set(nx.shortest_path(G, a, b)))
+                excl = (f" (Repo-wide funnels do not count - here that "
+                        f"means: {', '.join(shown_funnel)}.)"
+                        if shown_funnel else "")
                 _q(world, zone_id, "gate", "point",
                    f"The gate. Every top-level import route from {a} to {b} "
                    f"squeezes through a single LOCAL chokepoint - remove "
-                   f"that one module and {a} loses {b} entirely. (Repo-wide "
-                   f"funnels every route uses, like the package root, don't "
-                   f"count.) Point at the chokepoint: answer point <module>.",
+                   f"that one module and {a} loses {b} entirely.{excl} "
+                   f"Point at the chokepoint: answer point <module>.",
                    {"a": a, "b": b, "module": g,
                     "accepted": sorted(set(accepted)),
                     "witness": nx.shortest_path(G, a, b)},

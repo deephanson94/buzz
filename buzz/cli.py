@@ -189,9 +189,15 @@ def main(argv: list[str] | None = None) -> None:
             print(_try_next(world, s))
         elif cmd == "quests":
             if rest and rest[0] == "all":
+                print("every quest in the hive (id / type / XP / zone / status):")
                 for z in sorted(world.zones.values(), key=lambda z: z.order):
-                    print(render.render_quests(world, s, z.id).split("\n")[0])
-                print("\n('buzz quests' in a zone lists its quest ids)")
+                    for q in sorted((q for q in world.questions.values()
+                                     if q.zone == z.id),
+                                    key=lambda q: (q.boss, q.id)):
+                        st = s.resolved.get(q.id, "open")
+                        boss = " [BOSS]" if q.boss else ""
+                        print(f"  {q.id:5} {q.qtype:8} {q.xp:>3}xp  "
+                              f"{z.name}{boss}  [{st}]")
             elif rest:
                 print(render.render_quests(world, s, engine.resolve_zone(world, rest[0])))
             else:
@@ -249,6 +255,15 @@ def main(argv: list[str] | None = None) -> None:
                 print("\n" + render.render_status(world, s))
             else:
                 print("\n" + _try_next(world, s))
+        elif cmd == "trace":
+            if len(rest) < 2:
+                raise GameError("usage: buzz trace <module> <module> [module ...]")
+            mods = [engine.resolve_module(world, x) for x in rest]
+            print("\n".join(engine.trace(world, s, mods)))
+        elif cmd == "chronicle":
+            if not rest:
+                raise GameError("usage: buzz chronicle <module>")
+            print("\n".join(engine.chronicle(world, s, rest[0])))
         elif cmd == "who":
             if not rest:
                 raise GameError("usage: buzz who <module>")

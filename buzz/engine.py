@@ -328,6 +328,14 @@ def _check_walk(world: World, s: Session, q: Question, path: list[str]) -> tuple
 
     for a, b in zip(path, path[1:]):
         if not hop_ok(a, b):
+            if world.has_edge(a, b, kinds=(LAZY,)) and TUNNEL not in s.abilities:
+                return False, (f"the import from {a} to {b} EXISTS but is a "
+                               f"sealed tunnel - unlock tunnel-vision (a "
+                               f"cycle quest) before that hop counts")
+            if q.qtype in ("cycle", "detour") and world.has_edge(a, b):
+                return False, (f"{a} -> {b} exists but not as an always-run "
+                               f"top-level import - this proof needs "
+                               f"top-level edges only")
             return False, f"there is no import from {a} to {b} at that step"
     return True, ""
 
@@ -671,6 +679,58 @@ def probe(world: World, a: str, b: str) -> str:
         lines.append("co-change: nothing notable on record (not in either "
                      "module's top-10 co-change partners)")
     return "\n".join(lines)
+
+
+def trace(world: World, s: Session, path: list[str]) -> list[str]:
+    """Free dry-run of a proposed chain: reports each hop's status without
+    spending an answer attempt. The player supplies the chain, so this
+    reveals nothing they could not get from N probes - it just kills the
+    tool-call grind around walk quests."""
+    if len(path) < 2:
+        raise GameError("buzz trace <module> <module> [module ...]")
+    kinds = {TOP: "top-level", LAZY: "sealed tunnel (function-level)",
+             TYPE: "TYPE_CHECKING-only (never runs)"}
+    lines = []
+    ok = True
+    for a, b in zip(path, path[1:]):
+        e = next((e for e in world.edges if e.src == a and e.dst == b), None)
+        if e:
+            lines.append(f"  {a} -> {b}  OK [{kinds[e.kind]}]")
+        else:
+            ok = False
+            lines.append(f"  {a} -> {b}  NO EDGE")
+    lines.append("chain " + ("holds (edge kinds above decide whether a "
+                             "given quest accepts it)" if ok
+                             else "breaks at the hop(s) marked NO EDGE"))
+    return lines
+
+
+def chronicle(world: World, s: Session, name: str) -> list[str]:
+    """The hive's records for one module: focused commits and reverts that
+    touched it. Companion names are withheld while an open patch quest in
+    that module's zone depends on them - the record IS that answer."""
+    m = resolve_module(world, name)
+    zid = world.modules[m].zone
+    patch_open = any(q.qtype == "patch" and q.zone == zid
+                     and q.id not in s.resolved
+                     for q in world.questions.values())
+    lines = [f"chronicle of {m} (focused commits on record):"]
+    found = 0
+    for ev in world.events + world.reverts:
+        if m not in ev["mods"]:
+            continue
+        found += 1
+        others = [x for x in ev["mods"] if x != m]
+        if patch_open:
+            others = ["<withheld: an open patch quest in this district "
+                      "hangs on it>"] if others else []
+        lines.append(f"  {ev['date']}  \"{ev['subject']}\""
+                     + (f"  (moved with: {', '.join(others)})" if others else ""))
+        _name_seen(s, *(x for x in ev["mods"] if not patch_open))
+    if not found:
+        lines.append("  nothing notable on record (only focused 2-module "
+                     "commits and reverts are kept)")
+    return lines
 
 
 def coverage(world: World, s: Session) -> tuple[int, int]:

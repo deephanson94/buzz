@@ -235,8 +235,10 @@ def render_status(world: World, s: Session) -> str:
             lines.append(f"({left} endgame district(s) stay open for 100% "
                          f"hunters - or point buzz at another repo)")
         else:
-            lines.append(f"*** FULL CLEAR - every district mapped. Final "
-                         f"rank: {rank(world, s)} ***")
+            lines.append(f"*** FULL CLEAR - the load-bearing core of this "
+                         f"hive is mapped. Final rank: {rank(world, s)} ***")
+            lines.append("(quests target the structure that matters, not "
+                         "every file - most of the fog is side rooms)")
     if s.log:
         recent = s.log[-3:]
         if s.victory:
@@ -270,7 +272,12 @@ exploring (free, no XP):
                                see on the map
   buzz probe <a> <b> [c ...]   how are two modules related? shows import
                                edges (and their kind) + git co-change count;
-                               extra names probe several suspects at once
+                               extra names compare <a> against EACH of them
+                               (fan-out, not a chain - for chains use trace)
+  buzz trace <m1> <m2> ...     free dry-run of a proposed chain: reports
+                               each hop's status and edge kind
+  buzz chronicle <module>      the module's focused commits and reverts
+                               from git history
   buzz who <module>            who imports it, across the whole hive
   buzz scout <zone>            reveal a district's module NAMES (not edges)
   buzz quests all              one-line progress for every district
