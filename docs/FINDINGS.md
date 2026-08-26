@@ -53,7 +53,15 @@ verdict keep-with-changes from both scouts (purpose 4 then 7 as fixes
 landed mid-round - which also produced the methodology's contamination
 lesson, now a /panel rule: pin the code under test for the whole round).
 From round 18c onward, rounds run on the standing roster in
-.claude/agents/ via the /panel skill.
+.claude/agents/ via the /panel skill. Round 18c (scout-ux confirmation
+burst, 16 driver bursts): markers, overlay-quit, and bee/label fixes all
+confirmed clean; one NEW bug - the right wall had no collision because
+the 2-column step could hop over a wall whose column parity differed
+from the tiles (left wall was parity-aligned, masking the class of bug).
+Fixed by testing every swept column, verified against the scout's exact
+tmux repro (bee halts at the wall; doorway still passes). 18c also
+noted marker count is deliberately not a proxy for quest count (shared
+targets collapse onto one '!'; district-wide searches get none).
 
 **Learning met the bar** (8.00 across four separate rounds, both repos;
 every claim graph-, git-, or source-checkable). **Continue peaked at 7.17
