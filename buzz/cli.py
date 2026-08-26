@@ -245,12 +245,17 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
         if not rest:
             raise GameError("usage: buzz scout <zone-id-or-name>")
         zid = engine.resolve_zone(world, " ".join(rest))
-        n = engine.scout(world, s, zid)
+        gained = engine.scout(world, s, zid)
         masked = render.masked_modules(world, s)
         hidden_here = [m for m in world.zones[zid].members if m in masked]
-        if n:
-            print(f"your scouts report back: {n} new module name(s) on "
-                  f"the map (names only - fly there to read their imports)")
+        # name what was gained - EXCEPT place-quest targets: tying their
+        # name to the district just scouted would hand over that answer
+        namable = sorted(m for m in gained if m not in masked)
+        if gained:
+            print(f"your scouts report back: {len(gained)} new name(s) on "
+                  f"the map"
+                  + (f": {', '.join(namable)}" if namable else "")
+                  + "  (names only - fly there to read their imports)")
         else:
             print("your scouts report back: every name in this district "
                   "was already on your map")
@@ -263,8 +268,18 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
             raise GameError("usage: buzz answer <id> <walk|edge|region|place> ...")
         qid, verb, params = rest[0], rest[1], rest[2:]
         pre_log = len(s.log)
+        pre_victory = s.victory
         r = engine.answer(world, s, qid, verb, params)
         lesson = r["q"].lesson or engine.LESSONS.get(r["q"].qtype)
+        prior_lessons = set()
+        for q2 in s.resolved:
+            if q2 == qid:
+                continue
+            try:
+                qq = engine.get_question(world, s, q2)
+            except GameError:
+                continue  # a calibration pass may have pruned it
+            prior_lessons.add(qq.lesson or engine.LESSONS.get(qq.qtype))
         from .ui import paint
         if r.get("retry"):
             print(f"{paint('NEARLY.', 'yellow')} {r['note']}")
@@ -286,12 +301,21 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
                 print(f"a follow-up quest appeared: buzz quest {r['followup']}")
         if not r.get("retry"):
             # make the learning visible: every resolved quest is a fact
-            # banked, win or lose - the recap is built from exactly these
-            print(paint(f"* field note #{len(s.resolved)} recorded"
-                        + (f" - {lesson}" if lesson else ""), "cyan"))
+            # banked, win or lose - the recap is built from exactly these.
+            # A repeated lesson is honest about being reinforcement, so the
+            # fanfare stays reserved for genuinely new insight
+            if lesson and lesson in prior_lessons:
+                print(paint(f"* field note #{len(s.resolved)} recorded "
+                            f"(reinforces an earlier lesson)", "cyan"))
+            else:
+                print(paint(f"* field note #{len(s.resolved)} recorded"
+                            + (f" - {lesson}" if lesson else ""), "cyan"))
         for ev in s.log[pre_log:]:
             print(paint(f">>> {ev.upper()} <<<", "magenta"))
-        if s.victory:
+        # the full status block prints ONCE, at the moment of victory -
+        # re-dumping it after every later answer buried the feedback that
+        # actually changed (a panel's unanimous worst-moment)
+        if s.victory and not pre_victory:
             print("\n" + render.render_status(world, s))
         else:
             print("\n" + _try_next(world, s))
@@ -383,6 +407,26 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
             engine._name_seen(s, a, b)
             print(f"[{a} x {b}]")
             print(engine.probe(world, a, b))
+    elif cmd in ("notes", "facts"):
+        # the mid-run glance every panel asked for: just the lessons, no
+        # wall of recap - keeps 'I am learning' alive between beats
+        seen_lessons: list[str] = []
+        for qid2 in s.resolved:
+            try:
+                q2 = engine.get_question(world, s, qid2)
+            except GameError:
+                continue
+            les = q2.lesson or engine.LESSONS.get(q2.qtype)
+            if les and les not in seen_lessons:
+                seen_lessons.append(les)
+        print(f"field notes so far: {len(s.resolved)} fact(s) banked, "
+              f"{len(seen_lessons)} transferable lesson(s):")
+        for i, les in enumerate(seen_lessons, 1):
+            print(f"  {i}. {les}")
+        if not seen_lessons:
+            print("  (none yet - answer a quest, right or wrong, and the "
+                  "lesson lands here)")
+        print("(full evidence-backed notes: buzz recap)")
     elif cmd == "hint":
         if not rest:
             raise GameError("usage: buzz hint <id>")

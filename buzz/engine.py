@@ -110,16 +110,17 @@ def go(world: World, s: Session, name: str) -> str:
     return how
 
 
-def scout(world: World, s: Session, zone_name: str) -> int:
+def scout(world: World, s: Session, zone_name: str) -> list[str]:
     """Send a scout over a district: reveals the NAMES of its modules (they
     become seen/travelable) but none of their edges - you still have to fly
-    there and read the files. Free, like all exploration."""
+    there and read the files. Free, like all exploration. Returns the
+    newly-revealed names so the caller can say what was gained."""
     zid = resolve_zone(world, zone_name)
-    added = 0
+    added = []
     for m in world.zones[zid].members:
         if m not in s.seen:
             s.seen.append(m)
-            added += 1
+            added.append(m)
     return added
 
 
@@ -220,7 +221,8 @@ def get_question(world: World, s: Session, qid: str) -> Question:
         return world.questions[qid]
     if qid in s.followups:
         return Question(**s.followups[qid])
-    raise GameError(f"no quest '{qid}'")
+    raise GameError(f"no quest '{qid}' - 'quests' lists this district's "
+                    f"ids, 'quests all' the whole hive's")
 
 
 def question_open(world: World, s: Session, q: Question) -> tuple[bool, str]:
@@ -422,7 +424,9 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
                     any(step not in zone_members for step in t.get("why", {}).get(m, []))
                     for m in (truth_set - picks))
                 dir_hint = (" Hint: at least one missing module only connects "
-                            "through another district." if crosses else "")
+                            "through another district - re-check the edges "
+                            "of zones you have already left." if crosses
+                            else "")
                 return {"q": q, "correct": False, "partial": False,
                         "retry": True, "gained": 0, "followup": None,
                         "explain": "",

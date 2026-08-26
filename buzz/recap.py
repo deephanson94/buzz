@@ -78,12 +78,16 @@ def render_recap(world: World, s: Session) -> str:
     directory = [m for m in sorted(world.modules) if m in seen]
     if directory:
         lines += ["", "## Directory of everything surveyed", ""]
+        unread = 0
         for m in directory:
+            if m not in disc:
+                unread += 1  # a list of "not yet read" was pure padding
+                continue
             mod = world.modules[m]
             tag = f" [{mod.role}]" if mod.role else ""
-            desc = (mod.doc if m in disc and mod.doc else
-                    ("(read - no docstring)" if m in disc
-                     else "(sighted, not yet read)"))
-            lines.append(f"- {m}{tag} - {desc}")
+            lines.append(f"- {m}{tag} - {mod.doc or '(no docstring)'}")
+        if unread:
+            lines.append(f"- ...plus {unread} module(s) sighted but not "
+                         f"yet read")
     lines += ["", f"(regenerate anytime: buzz recap)"]
     return "\n".join(lines)

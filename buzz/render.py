@@ -87,11 +87,13 @@ def _source_peek(world: World, m) -> list[str]:
     for i, raw in enumerate(text.splitlines()[:3], 1):
         t = raw.strip()
         if t.startswith(('"""', "'''", '#')):
-            lines.append(f'  {t.strip(chr(34) + chr(39) + "# ")[:76]}')
+            first = t.strip(chr(34) + chr(39) + "# ")[:76]
+            if first != (m.doc or ""):  # look already printed the docstring
+                lines.append(f"  {first}")
             break
     # column-0 lines only: indented (function-level / TYPE_CHECKING) imports
     # stay hidden, same as the fog rules
-    all_imports = [f"  {i}: {raw[:76]}"
+    all_imports = [f"  {i}: {raw[:76]}{'...' if len(raw) > 76 else ''}"
                    for i, raw in enumerate(text.splitlines(), 1)
                    if raw.startswith(("import ", "from "))]
     if all_imports:
@@ -206,8 +208,15 @@ def render_question(world: World, s: Session, q) -> str:
                 if q.qtype in ("cycle", "detour") else
                 "edge rule: any import edge you can traverse counts "
                 "(sealed tunnels too, once tunnel-vision is unlocked)")
+    evidence = ""
+    if q.qtype in ("region", "hub", "gate", "hotspot"):
+        # the tool that cracks these fastest, surfaced where it's needed
+        # instead of buried in help (a panel found it too late)
+        evidence = (f"evidence: 'buzz edges {q.zone}' dumps this district's "
+                    f"import edges, tallied")
     lines = [f"[{q.id}] ({q.qtype}, {q.xp} XP, status: {st})", "", q.prompt,
-             *([rule] if rule else []), "",
+             *([rule] if rule else []),
+             *([evidence] if evidence else []), "",
              f"answer syntax: {syntax}",
              f"stuck? 'buzz hint {q.id}' (level 1 free-ish, costs XP; level 3 reveals)"]
     return "\n".join(lines)
@@ -308,6 +317,8 @@ exploring (free, no XP):
   buzz who <module>            who imports it, across the whole hive
   buzz atlas                   render the hive as a visual map (HTML file
                                with real fog-of-war - open in a browser)
+  buzz notes                   the transferable lessons banked so far,
+                               one line each (the quick mid-run glance)
   buzz recap                   compile everything this run taught into
                                field notes (your keepable architecture
                                summary of the repo)

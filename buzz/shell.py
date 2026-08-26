@@ -11,8 +11,8 @@ from .ui import paint
 
 COMMANDS = [
     "map", "look", "edges", "go", "quests", "quest", "scout", "answer",
-    "hint", "probe", "trace", "chronicle", "who", "atlas", "recap",
-    "standings", "rescout", "status", "help", "quit",
+    "hint", "probe", "trace", "chronicle", "who", "notes", "atlas",
+    "recap", "standings", "rescout", "status", "help", "quit",
 ]
 VERBS = ["walk", "edge", "region", "place", "point"]
 
@@ -25,6 +25,7 @@ SHORT_HELP = """the moves (tab completes everything; no 'buzz' prefix needed):
   probe <a> <b>  trace <m..>   evidence: relations, chain dry-runs
   who <m> / chronicle <m>      importers; git history of a module
   edges [zone]                 a district's import edges, tallied
+  notes                        the lessons you have banked so far, one line each
   atlas / recap / standings    visual map file / field notes / leaderboard
   status / rescout             progress; check whether the repo moved
   quit                         leave (progress saves after every move)
@@ -33,14 +34,19 @@ module names: any unique tail works - 'backend' finds transports.trunkline.backe
 
 
 def _hud(world: World, s: Session) -> str:
+    from .render import masked_modules
     zid = world.modules[s.here].zone
+    # the HUD must not leak a zone the fog still masks (its place quest
+    # is literally the question "which district is this?")
+    zone = ("???" if s.here in masked_modules(world, s)
+            else world.zones[zid].name)
     facts = len(s.resolved)
     total = len(world.questions)
     parts = [
         f"xp {s.xp}",
         f"streak {s.streak}",
         f"facts {facts}/{total}",
-        f"{world.zones[zid].name} @ {s.here}",
+        f"{zone} @ {s.here}",
     ]
     return paint("  ".join(f"[{p}]" for p in parts), "dim")
 
@@ -92,8 +98,14 @@ def run_shell(world: World, s: Session, save) -> None:
         pass
     print(paint("(interactive - type a command, tab completes, "
                 "'?' for moves, 'quit' to leave)", "dim"))
+    last_hud = None
     while True:
-        print(_hud(world, s))
+        # reprint the HUD only when something on it changed - six identical
+        # HUD lines in a scrollback bury the output that mattered
+        cur = _hud(world, s)
+        if cur != last_hud:
+            print(cur)
+            last_hud = cur
         try:
             line = input(paint("buzz> ", "gold"))
         except (EOFError, KeyboardInterrupt):
