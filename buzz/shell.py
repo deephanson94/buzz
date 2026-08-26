@@ -14,7 +14,7 @@ COMMANDS = [
     "hint", "probe", "trace", "chronicle", "who", "notes", "atlas",
     "recap", "standings", "rescout", "status", "help", "quit",
 ]
-VERBS = ["walk", "edge", "region", "place", "point"]
+VERBS = ["walk", "edge", "region", "place", "point", "order"]
 
 SHORT_HELP = """the moves (tab completes everything; no 'buzz' prefix needed):
   map / look [m] / go <m>      see the map, read a module, move

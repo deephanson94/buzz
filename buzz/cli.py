@@ -265,7 +265,8 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
                   f"on the map)")
     elif cmd == "answer":
         if len(rest) < 3:
-            raise GameError("usage: buzz answer <id> <walk|edge|region|place> ...")
+            raise GameError(
+                "usage: buzz answer <id> <walk|edge|region|place|point|order> ...")
         qid, verb, params = rest[0], rest[1], rest[2:]
         pre_log = len(s.log)
         pre_victory = s.victory

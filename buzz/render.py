@@ -200,6 +200,8 @@ def render_question(world: World, s: Session, q) -> str:
         "region": f"buzz answer {q.id} region <module> <module> ...",
         "place": f"buzz answer {q.id} place <zone-id-or-name>",
         "point": f"buzz answer {q.id} point <module>",
+        "order": f"buzz answer {q.id} order <first> <second> ... "
+                 f"(every listed module exactly once, dependencies first)",
     }[q.verb]
     st = _status_of(s, q.id)
     rule = ""

@@ -265,8 +265,21 @@ def _award(s: Session, q: Question, frac: float) -> int:
 
 def _explain(world: World, q: Question) -> str:
     t = q.truth
-    if q.qtype in ("walk", "cycle", "detour"):
+    if q.qtype in ("walk", "cycle", "detour", "via"):
         return f"one real chain: {' -> '.join(t['example'])}"
+    if q.qtype == "cut":
+        sizes = ", ".join(f"{m} strands {n}" for m, n in
+                          sorted(t["sizes"].items(), key=lambda kv: kv[1]))
+        return (f"{t['module']} is the safe demolition - the reverse "
+                f"reach of each candidate: {sizes}")
+    if q.qtype == "refactor":
+        return (f"severing {t['src']} -> {t['dst']} drops the radius from "
+                f"{t['base']} to {t['n_win']}; cutting {t['loser']}'s import "
+                f"leaves {t['n_lose']} - redundant routes keep carrying "
+                f"the reach")
+    if q.qtype == "order":
+        return (f"one valid order: {' -> '.join(t['example'])} - every "
+                f"module lands after everything it imports")
     if q.qtype == "region":
         why = t.get("why")
         if why:  # show the witness chain behind every ruling
@@ -330,6 +343,10 @@ def _check_walk(world: World, s: Session, q: Question, path: list[str]) -> tuple
     avoid = t.get("avoid")
     if avoid and avoid in path:
         return False, f"your route touches {avoid} - the whole point is to go around it"
+    via = t.get("via")
+    if via and via not in path:
+        return False, (f"a real chain, but the tour must pass THROUGH "
+                       f"{via} - reroute")
 
     def hop_ok(a: str, b: str) -> bool:
         if world.has_edge(a, b, kinds=allowed):
@@ -465,6 +482,29 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
                     f"{t['module']}")
         if not correct:
             note = f"{m} is not the one"
+    elif q.verb == "order":
+        seq = [resolve_module(world, a) for a in args]
+        need = list(t["set"])
+        if sorted(seq) != sorted(need):
+            raise GameError("list each of these exactly once: "
+                            + ", ".join(need))
+        posn = {m: i for i, m in enumerate(seq)}
+        # (u, v) = u transitively imports v, so v must land before u
+        bad = [(u, v) for u, v in t["pairs"] if posn[u] < posn[v]]
+        if not bad:
+            correct = True
+        elif s.tries.get(q.id, 0) < MAX_RETRIES:
+            s.tries[q.id] = s.tries.get(q.id, 0) + 1
+            left = MAX_RETRIES - s.tries[q.id]
+            return {"q": q, "correct": False, "partial": False, "retry": True,
+                    "gained": 0, "followup": None, "explain": "",
+                    "note": (f"{len(bad)} module(s) sit before something "
+                             f"they (transitively) import. Reorder and "
+                             f"resubmit (-{int(RETRY_COST*100)}% XP per "
+                             f"retry, {left} left after this one)")}
+        else:
+            note = (f"{len(bad)} placement(s) rewrite a module before "
+                    f"its dependency")
     else:
         raise GameError(f"unknown verb {q.verb}")
 
@@ -596,8 +636,19 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
     level = s.hints.get(q.id, 0) + 1
     t = q.truth
     if level == 1:
-        if q.qtype in ("walk", "cycle", "detour"):
+        if q.qtype in ("walk", "cycle", "detour", "via"):
             text = f"one known chain has {len(t['example']) - 1} hops (shorter ones may exist)"
+        elif q.qtype == "cut":
+            text = (f"the safe pick strands only "
+                    f"{min(t['sizes'].values())} module(s) - 'buzz who' "
+                    f"each candidate and follow the fan-in upward")
+        elif q.qtype == "refactor":
+            text = (f"a cut only counts if no OTHER route re-creates the "
+                    f"reach - trace which chains into {t['dst']} NEED "
+                    f"their candidate edge")
+        elif q.qtype == "order":
+            text = ("start with the module that imports nothing else on "
+                    "the list - 'buzz trace' pairs to test dependencies")
         elif q.qtype == "region":
             text = f"the blast radius contains {len(t['region'])} modules"
         elif q.qtype == "ghost":
@@ -626,8 +677,17 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
         s.hints[q.id] = 1
         return 1, text + "  (XP for this quest now -20%)"
     if level == 2:
-        if q.qtype in ("walk", "cycle", "detour"):
+        if q.qtype in ("walk", "cycle", "detour", "via"):
             text = f"the second module in one valid chain is {t['example'][1]}"
+        elif q.qtype == "cut":
+            worst = max(t["sizes"], key=lambda m: t["sizes"][m])
+            text = (f"it is NOT {worst} - deleting that one strands "
+                    f"{t['sizes'][worst]} modules")
+        elif q.qtype == "refactor":
+            text = (f"one candidate's removal leaves the radius at "
+                    f"{t['n_lose']} of {t['base']} - barely a dent")
+        elif q.qtype == "order":
+            text = f"one valid order begins with {t['example'][0]}"
         elif q.qtype == "region":
             text = f"one member of the blast radius: {t['region'][0]}"
         elif q.qtype == "ghost":
@@ -802,6 +862,10 @@ LESSONS = {
     "scar": "a revert marks risk - the module that was rolled back once deserves the hardest review next time",
     "hotspot": "churn concentrates: the file that changed most will change next - review it hardest",
     "direction": "always check which side of an import edge a module is on before touching it",
+    "cut": "safe deletion = nothing upstream: reverse reachability tells you exactly what a removal strands",
+    "refactor": "severing an import only helps when no redundant route re-creates the reach - measure the radius, never guess",
+    "via": "knowing HOW breakage travels matters as much as whether it does - chokepoints are routes, not trivia",
+    "order": "migration order is topological: rewrite a module only after everything it imports is already done",
 }
 
 
@@ -810,8 +874,14 @@ def reveal_prompt_modules(world: World, s: Session, q: Question) -> None:
     reports) - never the answer set itself."""
     t = q.truth
     named: list = []
-    if q.qtype in ("walk", "cycle", "direction", "detour"):
-        named = [t.get("src"), t.get("dst"), t.get("avoid")]
+    if q.qtype in ("walk", "cycle", "direction", "detour", "via"):
+        named = [t.get("src"), t.get("dst"), t.get("avoid"), t.get("via")]
+    elif q.qtype == "cut":
+        named = t.get("candidates", [])
+    elif q.qtype == "refactor":
+        named = [t.get("src"), t.get("dst"), t.get("loser")]
+    elif q.qtype == "order":
+        named = t.get("set", [])
     elif q.qtype == "region":
         named = [t.get("target")] + world.zones[q.zone].members
     elif q.qtype == "ghost":

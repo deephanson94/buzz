@@ -610,3 +610,78 @@ def test_shell_pipe_session(repo, tmp_path, monkeypatch):
         input="quests\nstatus\nquit\n", text=True, capture_output=True)
     assert out.returncode == 0
     assert "buzz>" in out.stdout and "session saved" in out.stdout
+
+
+def _mini_world(edges, zone_members):
+    from buzz.model import World, Module, Zone, Edge, TOP
+    w = World(repo="x", sha="y")
+    mods = sorted({m for e in edges for m in e} | set(zone_members))
+    for n in mods:
+        w.modules[n] = Module(name=n, path=n, zone="z1")
+    w.zones["z1"] = Zone(id="z1", name="Z", members=list(zone_members), order=2)
+    for a, b in edges:
+        w.edges.append(Edge(src=a, dst=b, kind=TOP))
+    return w
+
+
+def test_order_verb_verification():
+    from buzz.model import Question, Session
+    w = _mini_world([("b", "a"), ("c", "b"), ("d", "a")], ["a", "b", "c", "d"])
+    w.questions["q1"] = Question(
+        id="q1", zone="z1", qtype="order", verb="order", prompt="",
+        truth={"set": ["a", "b", "c", "d"],
+               "pairs": [["b", "a"], ["c", "b"], ["c", "a"], ["d", "a"]],
+               "example": ["a", "b", "c", "d"]}, xp=30)
+    s = Session(here="a", discovered=["a"], seen=["a"])
+    # wrong set is a syntax error, not an attempt
+    with pytest.raises(engine.GameError):
+        engine.answer(w, s, "q1", "order", ["a", "b", "c", "c"])
+    # invalid order: retry, not a verdict
+    r = engine.answer(w, s, "q1", "order", ["c", "b", "a", "d"])
+    assert r["retry"] and "q1" not in s.resolved
+    # any valid topological order is accepted (not only the example)
+    r2 = engine.answer(w, s, "q1", "order", ["a", "d", "b", "c"])
+    assert r2["correct"] and "valid order" in r2["explain"]
+
+
+def test_via_walk_verification():
+    from buzz.model import Question, Session
+    w = _mini_world([("a", "v"), ("v", "b"), ("a", "b")], ["a", "v", "b"])
+    w.questions["q1"] = Question(
+        id="q1", zone="z1", qtype="via", verb="walk", prompt="",
+        truth={"src": "a", "dst": "b", "via": "v",
+               "example": ["a", "v", "b"]}, xp=20)
+    s = Session(here="a", discovered=["a"], seen=["a"])
+    r = engine.answer(w, s, "q1", "walk", ["a", "b"])  # real chain, no via
+    assert r["retry"] and "THROUGH" in r["note"]
+    r2 = engine.answer(w, s, "q1", "walk", ["a", "v", "b"])
+    assert r2["correct"]
+
+
+def test_decision_generators_on_synthetic_graph():
+    from buzz.questions import gen_cut, gen_refactor, gen_order, gen_via
+    from buzz.analyze import top_graph
+    # a spine with spread-out reverse reaches for cut/refactor
+    edges = [("app", "svc"), ("svc", "core"), ("app", "core"),
+             ("cli", "app"), ("web", "app"), ("job", "svc"),
+             ("core", "util"), ("svc", "util"), ("x1", "cli")]
+    members = ["app", "svc", "core", "cli", "web", "job", "util", "x1"]
+    w = _mini_world(edges, members)
+    G = top_graph(w)
+    used: set = set()
+    assert gen_cut(w, G, "z1", used=used) == 1
+    cut = next(q for q in w.questions.values() if q.qtype == "cut")
+    sizes = cut.truth["sizes"]
+    assert cut.truth["module"] == min(sizes, key=lambda m: sizes[m])
+    assert gen_refactor(w, G, "z1", used=used) == 1
+    ref = next(q for q in w.questions.values() if q.qtype == "refactor")
+    assert ref.truth["n_win"] < ref.truth["n_lose"]
+    assert gen_order(w, G, "z1", used=used) == 1
+    order = next(q for q in w.questions.values() if q.qtype == "order")
+    ex = order.truth["example"]
+    posn = {m: i for i, m in enumerate(ex)}
+    assert all(posn[v] < posn[u] for u, v in order.truth["pairs"])
+    assert gen_via(w, G, "z1", used=used) == 1
+    via = next(q for q in w.questions.values() if q.qtype == "via")
+    assert via.truth["via"] in via.truth["example"][1:-1] or \
+        via.truth["via"] in via.truth["example"]
