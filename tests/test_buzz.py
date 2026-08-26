@@ -865,13 +865,64 @@ def test_exam_flow(world):
     assert s.exam["best"] == 100
 
 
-def test_badges_earned(world):
-    from buzz.badges import earned
+def test_exam_resumes_and_teaches_on_miss(world):
+    from buzz import exam
     s = engine.new_session(world)
-    assert not any(n == "Cartographer" for n, _ in earned(world, s))
+    # seed 4 correct solves directly (grading tolerates a full map)
+    qids = [q.id for q in world.questions.values() if not q.boss][:5]
+    if len(qids) < 4:
+        pytest.skip("fixture too small")
+    s.resolved = {q: "correct" for q in qids}
+    r1 = exam.start(world, s)
+    assert not r1["resumed"]
+    # the sample is OLDEST solves first, not newest
+    assert s.exam["qids"][0] == qids[0]
+    first = exam.current(world, s)
+    # a wrong answer reports the truth so the miss teaches on the spot
+    res = exam.grade(world, s, ["definitely-not-the-answer"])
+    assert not res["ok"] and res["truth"]
+    # bare exam mid-run RESUMES at the next item - it never restarts
+    r2 = exam.start(world, s)
+    assert r2["resumed"] and r2["i"] == 1
+    assert exam.current(world, s).id != first.id or len(qids) == 1
+    assert s.exam["missed"] == [first.id]   # the attempt survived
+    # tool-coaching sentences are stripped from the exam's re-print
+    for qid in s.exam["qids"]:
+        assert "'buzz " not in exam.clean_prompt(world.questions[qid])
+
+
+def test_badges_earned(world):
+    from buzz.badges import earned, progress, MIN_CLASS
+    s = engine.new_session(world)
+    assert not earned(world, s)          # nothing done, nothing minted
+    # command spam mints nothing: reading/seeing everything is not a badge
     s.discovered = list(world.modules)
     s.seen = list(world.modules)
-    names = [n for n, _ in earned(world, s)]
-    assert "Cartographer" in names and "Surveyor" in names
+    assert not earned(world, s)
+    # the first correct solve mints First Nectar
+    s.resolved["q1"] = "correct"
+    assert "First Nectar" in [n for n, _ in earned(world, s)]
     s.best_streak = 10
     assert "Streak Lord" in [n for n, _ in earned(world, s)]
+    # a perfect exam mints Elder Sage; 88% does not
+    s.exam = {"best": 88}
+    assert "Elder Sage" not in [n for n, _ in earned(world, s)]
+    s.exam = {"best": 100}
+    assert "Elder Sage" in [n for n, _ in earned(world, s)]
+    # class badges refuse to mint when the world has too few instances,
+    # and say so in their progress note
+    for name, desc, ok, note in progress(world, s):
+        if name == "Ghost Hunter":
+            n_ghost = sum(1 for q in world.questions.values()
+                          if q.qtype == "ghost")
+            if n_ghost < MIN_CLASS:
+                assert not ok and "needs" in note
+    # Clean Sweep needs EVERY quest correct, not just the boss path
+    s.hints = {}
+    s.tries = {}
+    s.victory = True
+    some = list(world.questions)[: len(world.questions) // 2]
+    s.resolved = {q: "correct" for q in some}
+    assert "Clean Sweep" not in [n for n, _ in earned(world, s)]
+    s.resolved = {q: "correct" for q in world.questions}
+    assert "Clean Sweep" in [n for n, _ in earned(world, s)]

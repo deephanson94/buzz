@@ -244,6 +244,11 @@ def _badge_line(world: World, s: Session) -> str:
     line = f"badges: {got or 'none yet'}"
     if s.exam.get("best"):
         line += f" | exam best: {s.exam['best']}% retention"
+    from .exam import in_progress
+    if in_progress(s):
+        e = s.exam
+        line += (f"\nEXAM IN PROGRESS [{e['idx'] + 1}"
+                 f"/{len(e['qids'])}] - 'buzz exam' shows the question")
     return line
 
 
@@ -371,6 +376,11 @@ quests (the only source of XP):
   buzz hint <id>               oracle hint ladder (costs XP; 3rd hint reveals)
 
   buzz status                  XP, rank, abilities, victory progress
+  buzz exam                    after 4+ solves: re-answer your oldest
+                               solves from memory - no tools, 0 XP, a
+                               retention score and a title
+  buzz badges                  earned honors, computed from what you
+                               actually did (never bought with XP)
 
 Edge kinds matter: `>` top-level imports always run; `#` sealed tunnels are
 function-level imports (walkable after a cycle quest unlocks tunnel-vision);
@@ -429,5 +439,10 @@ GLOSSARY = """the hive's words, in plain language:
   streak          consecutive clean solves: +5% XP each, halves on a miss.
   scout's         a one-liner written by an AI, clearly marked, worth
   impression      0 XP - flavor, never ground truth.
+  exam            a recall run over quests you already solved - oldest
+                  first, no tools, one attempt each, 0 XP. The score is
+                  retention; only your best is kept.
+  badge           an earned honor computed from what your session did.
+                  Never worth XP, never mintable by command spam.
 
 (back to the moves: help)"""
