@@ -60,19 +60,13 @@ def _quest_marks(world: World, s: Session):
             continue
         zone_open[q.zone] = zone_open.get(q.zone, 0) + 1
         t = q.truth
-        if q.qtype in ("walk", "cycle", "detour", "via", "journey",
-                       "direction"):
-            marks.update(x for x in (t.get("src"), t.get("dst"),
-                                     t.get("via")) if x)
-        elif q.qtype == "region":
-            marks.add(t.get("target"))
-        elif q.qtype == "gate":
-            marks.update(x for x in (t.get("a"), t.get("b")) if x)
-        elif q.qtype in ("ghost",):
-            marks.add(t.get("src"))
-        elif q.qtype in ("patch", "scar", "lore"):
-            if t.get("anchor"):
-                marks.add(t.get("anchor"))
+        # ONE marker per quest - its starting point - so '!' keeps meaning
+        # "begin here" (a scout found four marked tiles in one small room:
+        # density defeats the signal)
+        primary = (t.get("src") or t.get("target") or t.get("anchor")
+                   or t.get("a"))
+        if primary:
+            marks.add(primary)
     marks.discard(None)
     return marks, zone_open
 
@@ -129,7 +123,8 @@ def _draw_map(pad, world: World, s: Session, rooms, tiles):
 
 
 def _overlay(scr, lines, title=""):
-    """Full-screen scrollable text overlay; any key pages, q/ESC closes."""
+    """Full-screen text overlay. Returns True if the player pressed
+    Q/ESC (quit the whole overworld), False for a plain dismiss."""
     maxy, maxx = scr.getmaxyx()
     top = 0
     while True:
@@ -151,7 +146,9 @@ def _overlay(scr, lines, title=""):
         elif k in (curses.KEY_UP, ord("k")) and top > 0:
             top = max(0, top - 3)
         else:
-            return
+            # Q/ESC means QUIT THE OVERWORLD, even from an overlay - both
+            # round-18 scouts hung when an overlay swallowed their quit
+            return k in (ord("Q"), 27)
 
 
 def _main(scr, world: World, s: Session, save):
@@ -256,17 +253,21 @@ def _main(scr, world: World, s: Session, save):
             try:
                 at = engine.peek(world, s, here_m)
                 save(s)
-                _overlay(scr, render.render_look(world, s, at).splitlines(),
-                         title=f"spyglass: {at}")
+                if _overlay(scr,
+                            render.render_look(world, s, at).splitlines(),
+                            title=f"spyglass: {at}"):
+                    return
             except GameError as e:
                 msg = f"! {e}"
         elif k == ord("e"):
             zid = (world.modules[here_m].zone if here_m
                    else world.modules[s.here].zone)
-            _overlay(scr, render.render_quests(world, s, zid).splitlines(),
-                     title="quests here (answer them in the shell)")
+            if _overlay(scr,
+                        render.render_quests(world, s, zid).splitlines(),
+                        title="quests here (answer them in the shell)"):
+                return
         elif k == ord("?"):
-            _overlay(scr, [
+            if _overlay(scr, [
                 "THE OVERWORLD - keys",
                 "",
                 "arrows / wasd   walk the bee across the hive",
@@ -280,7 +281,8 @@ def _main(scr, world: World, s: Session, save):
                 "bright = read · dim = seen · ·· = still under fog",
                 "",
                 "answers stay in the shell - the overworld is for roaming.",
-            ], title="help")
+            ], title="help"):
+                return
 
 
 def run_overworld(world: World, s: Session, save) -> None:
