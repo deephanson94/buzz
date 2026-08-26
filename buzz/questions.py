@@ -630,6 +630,49 @@ def gen_direction(world: World, zone_id: str, count: int = 2,
     return made
 
 
+def gen_journey(world: World, count: int = 2,
+                used: set | None = None) -> int:
+    """The flow tier: follow the WORK from a run's entry point. Every hop
+    must be a real cross-module function call - imports alone don't count.
+    This is the 'how does it actually work' layer: the journey a task
+    takes at runtime IS the architecture story."""
+    used = used if used is not None else set()
+    CG = nx.DiGraph()
+    for c in world.calls:
+        CG.add_edge(c["src"], c["dst"])
+    if not CG.number_of_edges():
+        return 0
+    entries = [e for e in world.entries if CG.has_node(e)]
+    if not entries:  # fall back to call-graph roots that start real work
+        entries = sorted((n for n in CG.nodes if CG.in_degree(n) == 0
+                          and CG.out_degree(n) >= 1), key=str)[:3]
+    made = 0
+    for e in entries:
+        if made >= count:
+            break
+        lengths = nx.single_source_shortest_path_length(CG, e)
+        far = sorted(((d, n) for n, d in lengths.items() if 2 <= d <= 4),
+                     key=lambda t: (-t[0], t[1]))
+        if not far:
+            continue
+        d, dst = far[0]
+        if _sig("journey", e, dst) in used:
+            continue
+        used.add(_sig("journey", e, dst))
+        path = nx.shortest_path(CG, e, dst)
+        _q(world, world.modules[e].zone, "journey", "walk",
+           f"THE JOURNEY. A run begins at {e} - and by the time the work "
+           f"is done, code in {dst} has executed. Follow the WORK, not the "
+           f"imports: name the stations in order from {e} to {dst}, where "
+           f"every hop is a real function CALL from one module into the "
+           f"next. Evidence: 'buzz flow <module>' shows who a file you "
+           f"have read calls into. answer <module> <module> ...",
+           {"src": e, "dst": dst, "example": path, "flow": True},
+           xp=15 * d, distance=d + 1)
+        made += 1
+    return made
+
+
 def generate_questions(world: World) -> None:
     Gtop = top_graph(world)
     Gfull = full_graph(world)
@@ -662,6 +705,9 @@ def generate_questions(world: World) -> None:
             if i > 1:
                 q.truth["prev_stage"] = boss_qs[i - 2].id
             q.prompt = (f"[BOSS - stage {i}/{len(boss_qs)}] " + q.prompt)
+
+    # the flow tier: 1-2 runtime journeys from real entry points
+    gen_journey(world, count=2, used=used)
 
     # rotate the quest mix so districts play differently, and cap the
     # most repetition-prone types GLOBALLY - a recipe learned once should
