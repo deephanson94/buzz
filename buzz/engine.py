@@ -338,7 +338,10 @@ def _check_walk(world: World, s: Session, q: Question, path: list[str]) -> tuple
                     return False, (f"{a} imports {b}, but no work flows "
                                    f"there - this journey needs hops where "
                                    f"{a} actually CALLS into {b}")
-                return False, f"no call from {a} into {b} at that step"
+                return False, (f"no call from {a} into {b} at that step - "
+                               f"you may be following IMPORT reachability, "
+                               f"but a journey follows CALLS: 'buzz flow "
+                               f"{a}' shows where its work actually goes")
         return True, ""
 
     def hop_ok(a: str, b: str) -> bool:
@@ -752,11 +755,23 @@ def flow(world: World, s: Session, name: str) -> list[str]:
     outs = [c for c in world.calls if c["src"] == m]
     ins = [c for c in world.calls if c["dst"] == m]
     lines = [f"where {m}'s work goes (function calls, not just imports):"]
+    import re as _re
     for c in sorted(outs, key=lambda c: c["dst"]):
         _name_seen(s, c["dst"])
-        lines.append(f"  calls into {c['dst']}  ({', '.join(c['via'])})")
+        seam = any(_re.match(r"(get_|lookup|resolve|make_|create_|factory)",
+                             v) for v in c["via"]) or "registry" in c["dst"]
+        lines.append(f"  calls into {c['dst']}  ({', '.join(c['via'])})"
+                     + ("  <- a lookup seam: the concrete callee is chosen "
+                        "at RUNTIME - static analysis stops here"
+                        if seam else ""))
     if not outs:
         lines.append("  (no cross-module calls detected - work stays home)")
+    called = {c["dst"] for c in outs}
+    idle = sorted(e.dst for e in world.out_edges(m) if e.dst not in called)
+    if idle:
+        lines.append(f"  imported but never called: {', '.join(idle)}  "
+                     f"(referenced only as values, or dispatched "
+                     f"dynamically - no direct call found)")
     if ins:
         lines.append(f"who sends work INTO {m}:")
         for c in sorted(ins, key=lambda c: c["src"]):

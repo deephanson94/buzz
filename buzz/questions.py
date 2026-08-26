@@ -630,7 +630,7 @@ def gen_direction(world: World, zone_id: str, count: int = 2,
     return made
 
 
-def gen_journey(world: World, count: int = 2,
+def gen_journey(world: World, count: int = 3,
                 used: set | None = None) -> int:
     """The flow tier: follow the WORK from a run's entry point. Every hop
     must be a real cross-module function call - imports alone don't count.
@@ -646,8 +646,14 @@ def gen_journey(world: World, count: int = 2,
     if not entries:  # fall back to call-graph roots that start real work
         entries = sorted((n for n in CG.nodes if CG.in_degree(n) == 0
                           and CG.out_degree(n) >= 1), key=str)[:3]
+    # a panel's only complaint: ONE journey in a 22-quest campaign - the
+    # skill never got practiced. Mid-tier journeys start from busy hubs
+    # deeper in the system, not just the front door
+    interior = sorted((n for n in CG.nodes
+                       if n not in entries and CG.out_degree(n) >= 2),
+                      key=lambda n: (-CG.out_degree(n), str(n)))[:4]
     made = 0
-    for e in entries:
+    for e in entries + interior:
         if made >= count:
             break
         lengths = nx.single_source_shortest_path_length(CG, e)
@@ -655,11 +661,27 @@ def gen_journey(world: World, count: int = 2,
                      key=lambda t: (-t[0], t[1]))
         if not far:
             continue
-        d, dst = far[0]
-        if _sig("journey", e, dst) in used:
+        # one journey per destination, and never a sub-path of an
+        # existing journey - three quests sharing one call spine is the
+        # walk-superhighway mistake all over again
+        seen_nodes = {n for k, *rest in used if k == "journey-nodes"
+                      for n in rest}
+        best = None
+        for d, dst in far:
+            if _sig("journey-dst", dst) in used:
+                continue
+            path = nx.shortest_path(CG, e, dst)
+            fresh = sum(1 for n in path if n not in seen_nodes)
+            if fresh < 2:  # a rerun of known ground teaches nothing new
+                continue
+            score = (fresh, d)
+            if best is None or score > best[0]:
+                best = (score, d, dst, path)
+        if not best:
             continue
-        used.add(_sig("journey", e, dst))
-        path = nx.shortest_path(CG, e, dst)
+        _, d, dst, path = best
+        used.add(_sig("journey-dst", dst))
+        used.add(_sig("journey-nodes", *path))
         _q(world, world.modules[e].zone, "journey", "walk",
            f"THE JOURNEY. A run begins at {e} - and by the time the work "
            f"is done, code in {dst} has executed. Follow the WORK, not the "
@@ -707,7 +729,7 @@ def generate_questions(world: World) -> None:
             q.prompt = (f"[BOSS - stage {i}/{len(boss_qs)}] " + q.prompt)
 
     # the flow tier: 1-2 runtime journeys from real entry points
-    gen_journey(world, count=2, used=used)
+    gen_journey(world, count=3, used=used)
 
     # rotate the quest mix so districts play differently, and cap the
     # most repetition-prone types GLOBALLY - a recipe learned once should
