@@ -1,0 +1,222 @@
+"""The overworld: a top-down map screen for the terminal (curses).
+
+Districts are rooms, modules are tiles, and your bee walks the grid with
+the arrow keys - fog-of-war means tiles literally appear as you play.
+Optional and never load-bearing: every action calls the exact engine the
+shell uses (go/peek/quests), agents and pipes keep the one-shot
+interface, and quitting drops you back where you were.
+
+Keys: arrows/wasd move · Enter travel to the tile under you · l look ·
+e quests here · ? help · Q or ESC leave
+"""
+from __future__ import annotations
+
+import curses
+
+from . import engine, render
+from .engine import GameError
+from .model import World, Session, ROLE_BOSS, ROLE_BEDROCK, ROLE_GATE, \
+    ROLE_SWAMP
+
+TILE_W = 14          # character cells per module tile
+ROOM_PAD = 2
+
+
+def compute_layout(world: World, width: int = 110):
+    """Pure layout (unit-testable without curses): rooms as character-cell
+    boxes {zid: (x, y, w, h)}, module tiles {name: (x, y)}."""
+    rooms, tiles = {}, {}
+    x, y, row_h = 2, 2, 0
+    for z in sorted(world.zones.values(), key=lambda z: z.order):
+        n = max(1, len(z.members))
+        cols = max(2, int(n ** 0.5 * 1.4 + 0.99))
+        rows = -(-n // cols)
+        w = cols * TILE_W + ROOM_PAD * 2
+        h = rows * 2 + 3
+        if x + w > width and x > 2:
+            x = 2
+            y += row_h + 2
+            row_h = 0
+        rooms[z.id] = (x, y, w, h)
+        for i, m in enumerate(sorted(z.members)):
+            tiles[m] = (x + ROOM_PAD + (i % cols) * TILE_W,
+                        y + 2 + (i // cols) * 2)
+        row_h = max(row_h, h)
+        x += w + 3
+    return rooms, tiles, y + row_h + 3
+
+
+ROLE_GLYPH = {ROLE_BOSS: "B", ROLE_BEDROCK: "#", ROLE_GATE: "%",
+              ROLE_SWAMP: "~"}
+
+
+def _draw_map(pad, world: World, s: Session, rooms, tiles):
+    pad.erase()
+    seen, disc = set(s.seen), set(s.discovered)
+    masked = render.masked_modules(world, s)
+    for z in sorted(world.zones.values(), key=lambda z: z.order):
+        x, y, w, h = rooms[z.id]
+        known = any(m in seen for m in z.members)
+        title = z.name if known else "??? unexplored"
+        try:
+            pad.addstr(y, x, "+" + "-" * (w - 2) + "+")
+            pad.addstr(y + h - 1, x, "+" + "-" * (w - 2) + "+")
+            for yy in range(y + 1, y + h - 1):
+                pad.addstr(yy, x, "|")
+                pad.addstr(yy, x + w - 1, "|")
+            pad.addstr(y, x + 2, f" {title[:w - 6]} ",
+                       curses.A_BOLD | curses.color_pair(5))
+        except curses.error:
+            pass
+        for m in z.members:
+            tx, ty = tiles[m]
+            mod = world.modules[m]
+            try:
+                if m not in seen:
+                    pad.addstr(ty, tx, "··", curses.color_pair(6))
+                    continue
+                glyph = ROLE_GLYPH.get(mod.role, "o")
+                pair = {ROLE_BOSS: 1, ROLE_BEDROCK: 2, ROLE_GATE: 3,
+                        ROLE_SWAMP: 4}.get(mod.role, 0)
+                attr = curses.color_pair(pair) | (
+                    curses.A_BOLD if m in disc else curses.A_DIM)
+                label = ("???" if m in masked and m not in disc
+                         else m.split(".")[-1][:TILE_W - 4])
+                pad.addstr(ty, tx, f"{glyph} {label}", attr)
+            except curses.error:
+                pass
+
+
+def _overlay(scr, lines, title=""):
+    """Full-screen scrollable text overlay; any key pages, q/ESC closes."""
+    maxy, maxx = scr.getmaxyx()
+    top = 0
+    while True:
+        scr.erase()
+        if title:
+            scr.addstr(0, 2, title[: maxx - 4], curses.A_BOLD)
+        for i, ln in enumerate(lines[top: top + maxy - 3]):
+            try:
+                scr.addstr(i + 1, 2, ln[: maxx - 4])
+            except curses.error:
+                pass
+        scr.addstr(maxy - 1, 2,
+                   "j/k or arrows scroll · any other key closes"[: maxx - 4],
+                   curses.A_DIM)
+        scr.refresh()
+        k = scr.getch()
+        if k in (curses.KEY_DOWN, ord("j")) and top + maxy - 3 < len(lines):
+            top += 3
+        elif k in (curses.KEY_UP, ord("k")) and top > 0:
+            top = max(0, top - 3)
+        else:
+            return
+
+
+def _main(scr, world: World, s: Session, save):
+    curses.curs_set(0)
+    curses.use_default_colors()
+    for i, c in [(1, curses.COLOR_YELLOW), (2, curses.COLOR_BLUE),
+                 (3, curses.COLOR_MAGENTA), (4, curses.COLOR_GREEN),
+                 (5, curses.COLOR_CYAN), (6, curses.COLOR_BLACK)]:
+        try:
+            curses.init_pair(i, c, -1)
+        except curses.error:
+            pass
+    rooms, tiles, height = compute_layout(world)
+    pad = curses.newpad(height + 4, 130)
+    bee = list(tiles.get(s.here, (4, 4)))
+    msg = "arrows move · Enter travels · l look · e quests · ? help · Q quits"
+
+    def tile_at(bx, by):
+        for m, (tx, ty) in tiles.items():
+            if ty == by and tx <= bx < tx + TILE_W - 2:
+                return m
+        return None
+
+    while True:
+        _draw_map(pad, world, s, rooms, tiles)
+        maxy, maxx = scr.getmaxyx()
+        here_m = tile_at(*bee)
+        # bee on top of the map
+        try:
+            pad.addstr(bee[1], max(0, bee[0] - 2), "@",
+                       curses.A_BOLD | curses.color_pair(1))
+        except curses.error:
+            pass
+        scr.erase()
+        hud = (f" xp {s.xp} · streak {s.streak} · facts {len(s.resolved)}/"
+               f"{len(world.questions)} · at {s.here}")
+        scr.addstr(0, 0, hud[: maxx - 1], curses.A_REVERSE)
+        scr.refresh()
+        # viewport follows the bee
+        vy = max(0, min(bee[1] - (maxy - 4) // 2, height - (maxy - 3)))
+        vx = max(0, min(bee[0] - maxx // 2, 130 - maxx))
+        pad.refresh(max(0, vy), max(0, vx), 1, 0, maxy - 2, maxx - 1)
+        info = here_m if here_m else ""
+        if here_m and here_m in s.seen:
+            mod = world.modules[here_m]
+            info = f"{here_m} [{mod.role}]" + (
+                " - Enter to travel" if here_m != s.here else " - you are here")
+        elif here_m:
+            info = "an unseen tile - scout or explore to reveal it"
+        scr.addstr(maxy - 1, 0, (msg if not info else info)[: maxx - 1],
+                   curses.A_DIM)
+        scr.refresh()
+
+        k = scr.getch()
+        if k in (ord("Q"), 27):
+            return
+        elif k in (curses.KEY_LEFT, ord("a")):
+            bee[0] = max(2, bee[0] - 2)
+        elif k in (curses.KEY_RIGHT, ord("d")):
+            bee[0] = min(126, bee[0] + 2)
+        elif k in (curses.KEY_UP, ord("w")):
+            bee[1] = max(1, bee[1] - 1)
+        elif k in (curses.KEY_DOWN, ord("s")):
+            bee[1] = min(height, bee[1] + 1)
+        elif k in (curses.KEY_ENTER, 10, 13) and here_m:
+            try:
+                how = engine.go(world, s, here_m)
+                save(s)
+                msg = f"[{how}] arrived at {s.here} - fog updates on the map"
+            except GameError as e:
+                msg = f"! {e}"
+        elif k == ord("l") and here_m:
+            try:
+                at = engine.peek(world, s, here_m)
+                save(s)
+                _overlay(scr, render.render_look(world, s, at).splitlines(),
+                         title=f"spyglass: {at}")
+            except GameError as e:
+                msg = f"! {e}"
+        elif k == ord("e"):
+            zid = (world.modules[here_m].zone if here_m
+                   else world.modules[s.here].zone)
+            _overlay(scr, render.render_quests(world, s, zid).splitlines(),
+                     title="quests here (answer them in the shell)")
+        elif k == ord("?"):
+            _overlay(scr, [
+                "THE OVERWORLD - keys",
+                "",
+                "arrows / wasd   walk the bee across the hive",
+                "Enter           travel to the module tile under you",
+                "                (same rules as 'go': fog and seals apply)",
+                "l               spyglass the tile under you (look)",
+                "e               quests of the district you stand in",
+                "Q or ESC        back to the shell",
+                "",
+                "tiles: B boss · # bedrock · % gate · ~ swamp · o worker",
+                "bright = read · dim = seen · ·· = still under fog",
+                "",
+                "answers stay in the shell - the overworld is for roaming.",
+            ], title="help")
+
+
+def run_overworld(world: World, s: Session, save) -> None:
+    import sys
+    if not sys.stdout.isatty():
+        raise GameError("the overworld needs a real terminal - it is a "
+                        "screen, not a stream (agents and pipes keep the "
+                        "one-shot commands)")
+    curses.wrapper(_main, world, s, save)

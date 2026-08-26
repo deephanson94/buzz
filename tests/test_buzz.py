@@ -710,3 +710,16 @@ def test_flow_extraction_and_journey(tmp_path):
     assert not r.get("correct") and "CALLS" in (r.get("note") or "")
     r2 = engine.answer(w, s, j.id, "walk", j.truth["example"])
     assert r2["correct"] and "the work travels" in r2["explain"]
+
+
+def test_overworld_layout_pure(world):
+    from buzz.overworld import compute_layout
+    rooms, tiles, height = compute_layout(world)
+    assert set(rooms) == set(world.zones)
+    assert set(tiles) == set(world.modules)
+    for m, (tx, ty) in tiles.items():
+        x, y, w, h = rooms[world.modules[m].zone]
+        assert x <= tx < x + w and y < ty < y + h, f"{m} outside its room"
+    assert height > 0
+    # no two tiles collide
+    assert len({v for v in tiles.values()}) == len(tiles)

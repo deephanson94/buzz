@@ -21,7 +21,10 @@ On a real terminal, `buzz play` drops you into an interactive shell: no
 `buzz` prefix, tab-completion over commands and every module name you have
 sighted (the completer respects the fog), a persistent one-line HUD
 (xp / streak / facts learned / where you are), and a colored verdict on
-every answer. Re-enter anytime with bare `buzz`. Every command also works
+every answer. Re-enter anytime with bare `buzz`. `buzz tui` opens the
+OVERWORLD: a top-down map screen where your bee walks the districts with
+the arrow keys and the fog lifts tile by tile (Enter travels, l looks,
+e lists quests - answers stay in the shell). Every command also works
 one-shot (`buzz map`, `buzz answer q3 ...`) for pipes, agents, and CI.
 
 State lives in `./.buzz/` (`BUZZ_SESSION=<name>` for parallel sessions

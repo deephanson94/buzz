@@ -400,6 +400,9 @@ GLOSSARY = """the hive's words, in plain language:
   chronicle       one file's commit history, from git.
   blast radius    everything that (transitively) imports a file - what
                   could break when it changes.
+  overworld       'buzz tui': the walkable map screen - your bee, the
+                  arrow keys, and the fog lifting tile by tile. A skin
+                  over the same engine; answers stay in the shell.
   flow / journey  where the WORK goes at runtime: real function calls
                   between modules. An import without a call carries no
                   work - 'buzz flow <m>' shows a read file's calls.
