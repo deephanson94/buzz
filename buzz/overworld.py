@@ -50,14 +50,45 @@ ROLE_GLYPH = {ROLE_BOSS: "B", ROLE_BEDROCK: "#", ROLE_GATE: "%",
               ROLE_SWAMP: "~"}
 
 
+def _quest_marks(world: World, s: Session):
+    """Tiles worth walking to: modules OPEN quests name in their prompts
+    (sources, anchors, targets - never hidden answers), plus per-zone open
+    counts. The panel-less first cut had no goals on screen at all."""
+    marks, zone_open = set(), {}
+    for q in world.questions.values():
+        if q.id in s.resolved:
+            continue
+        zone_open[q.zone] = zone_open.get(q.zone, 0) + 1
+        t = q.truth
+        if q.qtype in ("walk", "cycle", "detour", "via", "journey",
+                       "direction"):
+            marks.update(x for x in (t.get("src"), t.get("dst"),
+                                     t.get("via")) if x)
+        elif q.qtype == "region":
+            marks.add(t.get("target"))
+        elif q.qtype == "gate":
+            marks.update(x for x in (t.get("a"), t.get("b")) if x)
+        elif q.qtype in ("ghost",):
+            marks.add(t.get("src"))
+        elif q.qtype in ("patch", "scar", "lore"):
+            if t.get("anchor"):
+                marks.add(t.get("anchor"))
+    marks.discard(None)
+    return marks, zone_open
+
+
 def _draw_map(pad, world: World, s: Session, rooms, tiles):
     pad.erase()
     seen, disc = set(s.seen), set(s.discovered)
     masked = render.masked_modules(world, s)
+    marks, zone_open = _quest_marks(world, s)
     for z in sorted(world.zones.values(), key=lambda z: z.order):
         x, y, w, h = rooms[z.id]
         known = any(m in seen for m in z.members)
         title = z.name if known else "??? unexplored"
+        n_open = zone_open.get(z.id, 0)
+        if n_open and known:
+            title += f" · {n_open} quest{'s' if n_open > 1 else ''}"
         try:
             pad.addstr(y, x, "+" + "-" * (w - 2) + "+")
             pad.addstr(y + h - 1, x, "+" + "-" * (w - 2) + "+")
@@ -76,12 +107,19 @@ def _draw_map(pad, world: World, s: Session, rooms, tiles):
                     pad.addstr(ty, tx, "··", curses.color_pair(6))
                     continue
                 glyph = ROLE_GLYPH.get(mod.role, "o")
+                if m in marks:
+                    glyph = "!"  # an open quest names this tile - go there
                 pair = {ROLE_BOSS: 1, ROLE_BEDROCK: 2, ROLE_GATE: 3,
                         ROLE_SWAMP: 4}.get(mod.role, 0)
+                if m in marks:
+                    pair = 1
                 attr = curses.color_pair(pair) | (
-                    curses.A_BOLD if m in disc else curses.A_DIM)
-                label = ("???" if m in masked and m not in disc
-                         else m.split(".")[-1][:TILE_W - 4])
+                    curses.A_BOLD if m in disc or m in marks
+                    else curses.A_DIM)
+                tail = "???" if m in masked and m not in disc \
+                    else m.split(".")[-1]
+                label = (tail if len(tail) <= TILE_W - 4
+                         else tail[: TILE_W - 5] + "…")
                 pad.addstr(ty, tx, f"{glyph} {label}", attr)
             except curses.error:
                 pass
@@ -153,13 +191,25 @@ def _main(scr, world: World, s: Session, save):
         vy = max(0, min(bee[1] - (maxy - 4) // 2, height - (maxy - 3)))
         vx = max(0, min(bee[0] - maxx // 2, 130 - maxx))
         pad.refresh(max(0, vy), max(0, vx), 1, 0, maxy - 2, maxx - 1)
-        info = here_m if here_m else ""
+        marks, zone_open = _quest_marks(world, s)
+        info = ""
         if here_m and here_m in s.seen:
             mod = world.modules[here_m]
-            info = f"{here_m} [{mod.role}]" + (
-                " - Enter to travel" if here_m != s.here else " - you are here")
+            info = f"{here_m} [{mod.role}]"
+            if here_m in marks:
+                info += " · an open quest names this module ('e' to read)"
+            info += (" - Enter travels, l looks" if here_m != s.here
+                     else " - you are here (l looks)")
         elif here_m:
-            info = "an unseen tile - scout or explore to reveal it"
+            info = "an unseen tile - walk elsewhere or scout in the shell"
+        else:
+            room = next((z for z, (x, y, w, h) in rooms.items()
+                         if x <= bee[0] < x + w and y <= bee[1] < y + h),
+                        None)
+            n = zone_open.get(room, 0) if room else 0
+            info = (f"{n} open quest{'s' if n != 1 else ''} in this "
+                    f"district - 'e' lists them, ! tiles are named by them"
+                    if n else "")
         scr.addstr(maxy - 1, 0, (msg if not info else info)[: maxx - 1],
                    curses.A_DIM)
         scr.refresh()
