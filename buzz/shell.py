@@ -1,0 +1,129 @@
+"""The interactive shell: buzz as a game you sit inside, not a command you
+retype. One process, readline tab-completion over everything you can
+currently see (the completer respects the fog), a persistent HUD line, and
+no 'buzz ' prefix. One-shot commands keep working for pipes and agents.
+"""
+from __future__ import annotations
+
+from .engine import GameError
+from .model import World, Session
+from .ui import paint
+
+COMMANDS = [
+    "map", "look", "edges", "go", "quests", "quest", "scout", "answer",
+    "hint", "probe", "trace", "chronicle", "who", "atlas", "recap",
+    "standings", "rescout", "status", "help", "quit",
+]
+VERBS = ["walk", "edge", "region", "place", "point"]
+
+SHORT_HELP = """the moves (tab completes everything; no 'buzz' prefix needed):
+  map / look [m] / go <m>      see the map, read a module, move
+  quests / quest <id>          the district's quests, one quest in full
+  answer <id> <verb> ...       submit - the ONLY source of XP
+  hint <id>                    oracle ladder (costs XP, 3rd reveals)
+  scout <zone>                 reveal a district's module names
+  probe <a> <b>  trace <m..>   evidence: relations, chain dry-runs
+  who <m> / chronicle <m>      importers; git history of a module
+  edges [zone]                 a district's import edges, tallied
+  atlas / recap / standings    visual map file / field notes / leaderboard
+  status / rescout             progress; check whether the repo moved
+  quit                         leave (progress saves after every move)
+module names: any unique tail works - 'backend' finds transports.trunkline.backend
+"""
+
+
+def _hud(world: World, s: Session) -> str:
+    zid = world.modules[s.here].zone
+    facts = len(s.resolved)
+    total = len(world.questions)
+    parts = [
+        f"xp {s.xp}",
+        f"streak {s.streak}",
+        f"facts {facts}/{total}",
+        f"{world.zones[zid].name} @ {s.here}",
+    ]
+    return paint("  ".join(f"[{p}]" for p in parts), "dim")
+
+
+def _completer_factory(world: World, s: Session):
+    def complete(text: str, state: int):
+        try:
+            import readline
+            buf = readline.get_line_buffer()
+        except Exception:
+            buf = text
+        words = buf.split()
+        at_first = not words or (len(words) == 1 and not buf.endswith(" "))
+        cands: list[str] = []
+        if at_first:
+            cands = COMMANDS
+        else:
+            cmd = words[0]
+            argn = len(words) - (0 if buf.endswith(" ") else 1)
+            if cmd == "answer" and argn == 1:
+                cands = [q.id for q in world.questions.values()
+                         if q.id not in s.resolved] + list(s.followups)
+            elif cmd == "answer" and argn == 2:
+                cands = VERBS
+            elif cmd in ("quest", "hint") and argn == 1:
+                cands = list(world.questions) + list(s.followups)
+            elif cmd in ("scout", "edges", "quests"):
+                cands = list(world.zones) + [z.name for z in
+                                             world.zones.values()]
+            else:
+                # module names - only what the fog has already yielded
+                cands = sorted(s.seen)
+        hits = [c for c in cands if c.startswith(text)]
+        # a dotted name completes segment-wise too: 'back' -> ...backend
+        if not hits and text:
+            hits = [c for c in cands
+                    if any(seg.startswith(text) for seg in c.split("."))]
+        return hits[state] if state < len(hits) else None
+    return complete
+
+
+def run_shell(world: World, s: Session, save) -> None:
+    try:
+        import readline
+        readline.set_completer_delims(" ")
+        readline.set_completer(_completer_factory(world, s))
+        readline.parse_and_bind("tab: complete")
+    except Exception:
+        pass
+    print(paint("(interactive - type a command, tab completes, "
+                "'?' for moves, 'quit' to leave)", "dim"))
+    while True:
+        print(_hud(world, s))
+        try:
+            line = input(paint("buzz> ", "gold"))
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+        parts = line.split()
+        if not parts:
+            from .cli import _try_next
+            print(_try_next(world, s))
+            continue
+        cmd, rest = parts[0], parts[1:]
+        if cmd in ("quit", "exit", "q"):
+            break
+        if cmd in ("help", "?"):
+            print(SHORT_HELP)
+            continue
+        if cmd in ("analyze", "play", "calibrate", "author", "check"):
+            print("! that's a setup command - run it outside the shell "
+                  "(quit first)")
+            continue
+        try:
+            from .cli import dispatch
+            dispatch(world, s, cmd, rest)
+        except GameError as e:
+            print(paint(f"! {e}", "red"))
+        except Exception as e:  # a crash should never eat the session
+            print(paint(f"! unexpected error: {e}", "red"))
+        save(s)
+        if s.victory:
+            pass  # the victory banner already printed; keep playing or quit
+    facts = len(s.resolved)
+    print(paint(f"session saved - {facts} fact(s) about this repo are yours "
+                f"now. 'buzz recap' compiles them into field notes.", "cyan"))

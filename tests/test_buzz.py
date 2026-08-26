@@ -566,3 +566,47 @@ def test_wrong_answer_halves_streak():
     s.streak = 5
     engine.answer(w, s, "q1", "point", ["c"])
     assert s.streak == 2  # halved, not zeroed
+
+
+def test_shell_completer_respects_fog(world):
+    from buzz.shell import _completer_factory, COMMANDS
+    s = engine.new_session(world)
+    complete = _completer_factory(world, s)
+    # first token: commands
+    hits = []
+    i = 0
+    while (h := complete("g", i)) is not None:
+        hits.append(h); i += 1
+    assert "go" in hits and all(h in COMMANDS for h in hits)
+    # module completion draws ONLY from what the fog has yielded
+    unseen = [m for m in world.modules if m not in s.seen]
+    if unseen:
+        target = unseen[0]
+        i, hits = 0, []
+        while (h := complete(target[:3], i)) is not None:
+            hits.append(h); i += 1
+        assert target not in hits
+
+
+def test_quest_gist_one_line():
+    from buzz.render import _gist
+    long = "A page from the chronicle. " * 10
+    g = _gist(long)
+    assert len(g) <= 72 and "\n" not in g and g.endswith("...")
+    assert _gist("short prompt") == "short prompt"
+
+
+def test_shell_pipe_session(repo, tmp_path, monkeypatch):
+    import subprocess, os, sys
+    game = tmp_path / "g"
+    game.mkdir()
+    env = dict(os.environ, BUZZ_DIR=str(game / ".buzz"), BUZZ_SESSION="t1")
+    subprocess.run([sys.executable, "-m", "buzz.cli", "analyze", str(repo)],
+                   cwd=game, env=env, check=True, capture_output=True)
+    subprocess.run([sys.executable, "-m", "buzz.cli", "play"],
+                   cwd=game, env=env, check=True, capture_output=True)
+    out = subprocess.run(
+        [sys.executable, "-m", "buzz.cli", "shell"], cwd=game, env=env,
+        input="quests\nstatus\nquit\n", text=True, capture_output=True)
+    assert out.returncode == 0
+    assert "buzz>" in out.stdout and "session saved" in out.stdout

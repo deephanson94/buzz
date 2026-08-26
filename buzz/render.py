@@ -149,6 +149,17 @@ def render_look(world: World, s: Session, at: str | None = None) -> str:
     return "\n".join(lines)
 
 
+def _gist(prompt: str, width: int = 66) -> str:
+    """One scannable line per open quest - the full text stays behind
+    'buzz quest <id>' (wordiness was the first human dogfooder's top
+    complaint)."""
+    text = " ".join(prompt.split())
+    if len(text) <= width:
+        return text
+    cut = text[:width].rsplit(" ", 1)[0]
+    return cut + " ..."
+
+
 def _status_of(s: Session, qid: str) -> str:
     st = s.resolved.get(qid)
     return {"correct": "SOLVED", "partial": "partial", "revealed": "revealed"}.get(st, "open")
@@ -171,6 +182,8 @@ def render_quests(world: World, s: Session, zone_id: str) -> str:
         elif q.boss and q.truth.get("prev_stage") not in (None, *s.resolved):
             lock = f" [stage {q.truth['stage']}: sealed until the prior stage falls]"
         lines.append(f"  {q.id} [{_status_of(s, q.id)}] ({q.qtype}, {q.xp} XP){lock}")
+        if not lock and q.id not in s.resolved:
+            lines.append(f"        {_gist(q.prompt)}")
     for f in fus:
         lines.append(f"  {f['id']} [{_status_of(s, f['id'])}] (follow-up, {f['xp']} XP)")
     lines.append("")
@@ -269,7 +282,11 @@ HELP = """buzz - learn how a repo works by exploring it
 
 setup:
   buzz analyze <repo-path>     build the world (run once, from the game dir)
-  buzz play                    start (or restart) a session
+  buzz play                    start (or restart) a session - on a real
+                               terminal this drops you into the interactive
+                               shell (tab-completion, no 'buzz' prefix)
+  buzz shell                   re-enter the shell for an existing session
+                               (bare 'buzz' works too)
 
 exploring (free, no XP):
   buzz map                     the fog-of-war hive map

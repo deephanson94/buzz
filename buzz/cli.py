@@ -69,18 +69,13 @@ def cmd_play() -> None:
     s = engine.new_session(world)
     s.save(session_path())
     name = world.repo.rsplit("/", 1)[-1]
-    print(f"""Welcome to the hive: {name}
+    from .ui import paint
+    print(paint(f"THE HIVE: {name}", "gold"))
+    print(f"""You are a scout bee in a dark codebase. Explore freely (always
+safe, always free); answer quests to earn XP and light up the map.
+Wrong answers cost nothing - they reveal the truth.
 
-This codebase is a hive and you are a scout bee. The map starts dark.
-Walk the import edges, light up the districts, and answer quests to prove
-you understand how the code fits together. XP comes ONLY from quests -
-exploring is free and safe. Wrong answers reveal the truth and never
-subtract XP, but clean first-try solves build a streak bonus.
-
-Module addressing: names drop the package prefix (peft/config.py is just
-'config'); files in subpackages keep their dots (tuners.lora.config).
-
-You wake up at {world.start} - the module with the widest view of the hive.
+You wake up at {world.start}.
 """)
     print(render.render_map(world, s))
     print("\ntry next: buzz look   (then: buzz quests)")
@@ -110,9 +105,24 @@ def _try_next(world: World, s: Session) -> str:
     return "all zones cleared - buzz status"
 
 
+def _enter_shell(world: World, s: Session) -> None:
+    from .shell import run_shell
+    run_shell(world, s, lambda sess: sess.save(session_path()))
+
+
 def main(argv: list[str] | None = None) -> None:
     args = list(sys.argv[1:] if argv is None else argv)
-    if not args or args[0] in ("-h", "--help", "help"):
+    if not args:
+        # bare `buzz` on a real terminal: drop straight into the game
+        if sys.stdin.isatty() and (game_dir() / "world.json").exists() \
+                and session_path().exists():
+            world = load_world()
+            s = load_session(world)
+            _enter_shell(world, s)
+            return
+        print(render.HELP)
+        return
+    if args[0] in ("-h", "--help", "help"):
         print(render.HELP)
         return
     cmd, rest = args[0], args[1:]
@@ -122,6 +132,15 @@ def main(argv: list[str] | None = None) -> None:
         return
     if cmd == "play":
         cmd_play()
+        if sys.stdin.isatty():
+            world = load_world()
+            s = load_session(world)
+            _enter_shell(world, s)
+        return
+    if cmd == "shell":
+        world = load_world()
+        s = load_session(world)
+        _enter_shell(world, s)
         return
     if cmd == "calibrate":
         from . import calibrate
@@ -167,199 +186,212 @@ def main(argv: list[str] | None = None) -> None:
     world = load_world()
     s = load_session(world)
     try:
-        if cmd == "map":
-            print(render.render_map(world, s))
-        elif cmd == "look":
-            at = engine.peek(world, s, rest[0]) if rest else None
-            print(render.render_look(world, s, at))
-            print("\n" + _try_next(world, s))
-        elif cmd == "edges":
-            zid = (engine.resolve_zone(world, " ".join(rest)) if rest
-                   else world.modules[s.here].zone)
-            print("\n".join(engine.zone_edges(world, zid, s)))
-        elif cmd == "go":
-            if not rest:
-                raise GameError("usage: buzz go <module>")
-            how = engine.go(world, s, rest[0])
-            m = world.modules[s.here]
-            outs = world.out_edges(s.here)
-            sealed = sum(1 for e in outs if e.kind == "lazy")
-            print(f"[{how}] you arrive at {s.here} "
-                  f"({world.zones[m.zone].name}, role: {m.role}) - "
-                  f"{len(outs)} out-edges"
-                  + (f", {sealed} sealed" if sealed else "")
-                  + ". 'buzz look' for detail.")
-            print(_try_next(world, s))
-        elif cmd == "quests":
-            if rest and rest[0] == "all":
-                print("every quest in the hive (id / type / XP / zone / status):")
-                for z in sorted(world.zones.values(), key=lambda z: z.order):
-                    for q in sorted((q for q in world.questions.values()
-                                     if q.zone == z.id),
-                                    key=lambda q: (q.boss, q.id)):
-                        st = s.resolved.get(q.id, "open")
-                        boss = " [BOSS]" if q.boss else ""
-                        print(f"  {q.id:5} {q.qtype:8} {q.xp:>3}xp  "
-                              f"{z.name}{boss}  [{st}]")
-            elif rest:
-                print(render.render_quests(world, s, engine.resolve_zone(world, rest[0])))
-            else:
-                print(render.render_quests(world, s, world.modules[s.here].zone))
-        elif cmd == "quest":
-            if not rest:
-                raise GameError("usage: buzz quest <id>")
-            q = engine.get_question(world, s, rest[0])
-            engine.reveal_prompt_modules(world, s, q)
-            print(render.render_question(world, s, q))
-        elif cmd == "scout":
-            if not rest:
-                raise GameError("usage: buzz scout <zone-id-or-name>")
-            zid = engine.resolve_zone(world, " ".join(rest))
-            n = engine.scout(world, s, zid)
-            masked = render.masked_modules(world, s)
-            hidden_here = [m for m in world.zones[zid].members if m in masked]
-            if n:
-                print(f"your scouts report back: {n} new module name(s) on "
-                      f"the map (names only - fly there to read their imports)")
-            else:
-                print("your scouts report back: every name in this district "
-                      "was already on your map")
-            if hidden_here:
-                print(f"({len(hidden_here)} sighting(s) stay unplaced until "
-                      f"their place quest is solved - see 'unplaced sightings' "
-                      f"on the map)")
-        elif cmd == "answer":
-            if len(rest) < 3:
-                raise GameError("usage: buzz answer <id> <walk|edge|region|place> ...")
-            qid, verb, params = rest[0], rest[1], rest[2:]
-            pre_log = len(s.log)
-            r = engine.answer(world, s, qid, verb, params)
-            lesson = r["q"].lesson or engine.LESSONS.get(r["q"].qtype)
-            if r.get("retry"):
-                print(f"NEARLY. {r['note']}")
-            elif r["correct"]:
-                streak_note = f"  [streak x{s.streak}]" if s.streak >= 2 else ""
-                print(f"CORRECT! +{r['gained']} XP{streak_note}  ({r['explain']})")
-                if r["note"]:
-                    print(r["note"])
-            elif r["partial"]:
-                print(f"CLOSE - partial credit, +{r['gained']} XP. {r['note']}")
-                print(f"the truth: {r['explain']}")
-            else:
-                print(f"WRONG - but knowledge is never wasted. {r['note']}")
-                print(f"the truth: {r['explain']}")
-                if r["followup"]:
-                    print(f"a follow-up quest appeared: buzz quest {r['followup']}")
-            if lesson and not r.get("retry"):
-                print(f"(lesson: {lesson})")
-            for ev in s.log[pre_log:]:
-                print(f">>> {ev.upper()} <<<")
-            if s.victory:
-                print("\n" + render.render_status(world, s))
-            else:
-                print("\n" + _try_next(world, s))
-        elif cmd == "standings":
-            rows = []
-            for p in sorted((game_dir() / "sessions").glob("*.json")):
-                try:
-                    other = Session.load(p)
-                except Exception:
-                    continue
-                solved = sum(1 for v in other.resolved.values() if v == "correct")
-                here = other.here
-                at = (world.zones[world.modules[here].zone].name
-                      if here in world.modules else "?")
-                rows.append((other.xp, p.stem, engine.rank(world, other),
-                             solved, len(other.resolved),
-                             len(other.discovered), other.streak,
-                             other.victory, at))
-            rows.sort(reverse=True)
-            print("standings for this hive (all scouts, shared world):")
-            print(f"  {'scout':16} {'XP':>5}  {'rank':12} {'solved':>9} "
-                  f"{'visited':>8} {'streak':>7}  now in")
-            for xp, name, rk, solved, att, disc, streak, vic, at in rows:
-                flag = " *CLEAR*" if vic else ""
-                print(f"  {name:16} {xp:>5}  {rk:12} {solved:>4}/{att:<4} "
-                      f"{disc:>8} {streak:>7}  {at}{flag}")
-        elif cmd == "rescout":
-            from .rescout import rescout as _rescout
-            target = Path(rest[0]) if rest else Path(world.repo)
-            r = _rescout(world, target)
-            if r.get("error"):
-                raise GameError(r["error"])
-            if not r.get("moved"):
-                print("the ground is quiet - no new commits since the "
-                      f"world was last pinned ({world.sha[:10]})")
-                mine = [qid for qid in r.get("standing", [])
-                        if qid not in s.resolved]
-                if mine:
-                    print(f"but the last tremor's AFTERSHOCK quest(s) still "
-                          f"stand for you: {', '.join(mine)} - "
-                          f"'buzz quest <id>' to take them on")
-                elif r.get("standing"):
-                    print("(you already settled every aftershock on record)")
-            else:
-                world.save(game_dir() / "world.json")
-                print(f"the hive MOVED: {r['commits']} new commit(s) since "
-                      f"your pin (now re-pinned to {r['new_sha'][:10]})")
-                if r["zones"]:
-                    print("disturbed districts: " + ", ".join(r["zones"]))
-                top = list(r["disturbed"].items())[:6]
-                if top:
-                    print("most-shaken modules: "
-                          + ", ".join(f"{m} ({n})" for m, n in top))
-                if r["aftershocks"]:
-                    print(f"AFTERSHOCK quest(s) spawned: "
-                          f"{', '.join(r['aftershocks'])} - "
-                          f"'buzz quest <id>' to take them on")
-        elif cmd == "atlas":
-            from .atlas import write_atlas
-            p = write_atlas(world, s, game_dir() / "atlas.html")
-            print(f"atlas rendered: {p.resolve()}")
-            print("open it in a browser; regenerate after moving")
-        elif cmd == "recap":
-            from .recap import render_recap
-            text = render_recap(world, s)
-            p = game_dir() / "field_notes.md"
-            p.write_text(text)
-            print(text)
-            print(f"\n(saved to {p.resolve()})")
-        elif cmd == "trace":
-            if len(rest) < 2:
-                raise GameError("usage: buzz trace <module> <module> [module ...]")
-            mods = [engine.resolve_module(world, x) for x in rest]
-            print("\n".join(engine.trace(world, s, mods)))
-        elif cmd == "chronicle":
-            if not rest:
-                raise GameError("usage: buzz chronicle <module>")
-            print("\n".join(engine.chronicle(world, s, rest[0])))
-        elif cmd == "who":
-            if not rest:
-                raise GameError("usage: buzz who <module>")
-            print("\n".join(engine.who(world, rest[0], s)))
-        elif cmd == "probe":
-            if len(rest) < 2:
-                raise GameError("usage: buzz probe <module> <suspect> [suspect ...]")
-            a = engine.resolve_module(world, rest[0])
-            for other in rest[1:]:
-                b = engine.resolve_module(world, other)
-                engine._name_seen(s, a, b)
-                print(f"[{a} x {b}]")
-                print(engine.probe(world, a, b))
-        elif cmd == "hint":
-            if not rest:
-                raise GameError("usage: buzz hint <id>")
-            lvl, text = engine.hint(world, s, rest[0])
-            print(f"oracle hint {lvl}: {text}")
-        elif cmd == "status":
-            print(render.render_status(world, s))
-        else:
-            raise GameError(f"unknown command '{cmd}' - try: buzz help")
+        dispatch(world, s, cmd, rest)
     except GameError as e:
         print(f"! {e}")
         sys.exit(1)
     finally:
         s.save(session_path())
+
+
+def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
+    """One game command against a live world+session. Shared by the one-shot
+    CLI and the interactive shell; raises GameError, never exits."""
+    if cmd == "map":
+        print(render.render_map(world, s))
+    elif cmd == "look":
+        at = engine.peek(world, s, rest[0]) if rest else None
+        print(render.render_look(world, s, at))
+        print("\n" + _try_next(world, s))
+    elif cmd == "edges":
+        zid = (engine.resolve_zone(world, " ".join(rest)) if rest
+               else world.modules[s.here].zone)
+        print("\n".join(engine.zone_edges(world, zid, s)))
+    elif cmd == "go":
+        if not rest:
+            raise GameError("usage: buzz go <module>")
+        how = engine.go(world, s, rest[0])
+        m = world.modules[s.here]
+        outs = world.out_edges(s.here)
+        sealed = sum(1 for e in outs if e.kind == "lazy")
+        print(f"[{how}] you arrive at {s.here} "
+              f"({world.zones[m.zone].name}, role: {m.role}) - "
+              f"{len(outs)} out-edges"
+              + (f", {sealed} sealed" if sealed else "")
+              + ". 'buzz look' for detail.")
+        print(_try_next(world, s))
+    elif cmd == "quests":
+        if rest and rest[0] == "all":
+            print("every quest in the hive (id / type / XP / zone / status):")
+            for z in sorted(world.zones.values(), key=lambda z: z.order):
+                for q in sorted((q for q in world.questions.values()
+                                 if q.zone == z.id),
+                                key=lambda q: (q.boss, q.id)):
+                    st = s.resolved.get(q.id, "open")
+                    boss = " [BOSS]" if q.boss else ""
+                    print(f"  {q.id:5} {q.qtype:8} {q.xp:>3}xp  "
+                          f"{z.name}{boss}  [{st}]")
+        elif rest:
+            print(render.render_quests(world, s, engine.resolve_zone(world, rest[0])))
+        else:
+            print(render.render_quests(world, s, world.modules[s.here].zone))
+    elif cmd == "quest":
+        if not rest:
+            raise GameError("usage: buzz quest <id>")
+        q = engine.get_question(world, s, rest[0])
+        engine.reveal_prompt_modules(world, s, q)
+        print(render.render_question(world, s, q))
+    elif cmd == "scout":
+        if not rest:
+            raise GameError("usage: buzz scout <zone-id-or-name>")
+        zid = engine.resolve_zone(world, " ".join(rest))
+        n = engine.scout(world, s, zid)
+        masked = render.masked_modules(world, s)
+        hidden_here = [m for m in world.zones[zid].members if m in masked]
+        if n:
+            print(f"your scouts report back: {n} new module name(s) on "
+                  f"the map (names only - fly there to read their imports)")
+        else:
+            print("your scouts report back: every name in this district "
+                  "was already on your map")
+        if hidden_here:
+            print(f"({len(hidden_here)} sighting(s) stay unplaced until "
+                  f"their place quest is solved - see 'unplaced sightings' "
+                  f"on the map)")
+    elif cmd == "answer":
+        if len(rest) < 3:
+            raise GameError("usage: buzz answer <id> <walk|edge|region|place> ...")
+        qid, verb, params = rest[0], rest[1], rest[2:]
+        pre_log = len(s.log)
+        r = engine.answer(world, s, qid, verb, params)
+        lesson = r["q"].lesson or engine.LESSONS.get(r["q"].qtype)
+        from .ui import paint
+        if r.get("retry"):
+            print(f"{paint('NEARLY.', 'yellow')} {r['note']}")
+        elif r["correct"]:
+            streak_note = f"  [streak x{s.streak}]" if s.streak >= 2 else ""
+            print(f"{paint('CORRECT!', 'green')} +{r['gained']} XP"
+                  f"{streak_note}  ({r['explain']})")
+            if r["note"]:
+                print(r["note"])
+        elif r["partial"]:
+            print(f"{paint('CLOSE', 'yellow')} - partial credit, "
+                  f"+{r['gained']} XP. {r['note']}")
+            print(f"the truth: {r['explain']}")
+        else:
+            print(f"{paint('WRONG', 'red')} - but knowledge is never "
+                  f"wasted. {r['note']}")
+            print(f"the truth: {r['explain']}")
+            if r["followup"]:
+                print(f"a follow-up quest appeared: buzz quest {r['followup']}")
+        if not r.get("retry"):
+            # make the learning visible: every resolved quest is a fact
+            # banked, win or lose - the recap is built from exactly these
+            print(paint(f"* field note #{len(s.resolved)} recorded"
+                        + (f" - {lesson}" if lesson else ""), "cyan"))
+        for ev in s.log[pre_log:]:
+            print(paint(f">>> {ev.upper()} <<<", "magenta"))
+        if s.victory:
+            print("\n" + render.render_status(world, s))
+        else:
+            print("\n" + _try_next(world, s))
+    elif cmd == "standings":
+        rows = []
+        for p in sorted((game_dir() / "sessions").glob("*.json")):
+            try:
+                other = Session.load(p)
+            except Exception:
+                continue
+            solved = sum(1 for v in other.resolved.values() if v == "correct")
+            here = other.here
+            at = (world.zones[world.modules[here].zone].name
+                  if here in world.modules else "?")
+            rows.append((other.xp, p.stem, engine.rank(world, other),
+                         solved, len(other.resolved),
+                         len(other.discovered), other.streak,
+                         other.victory, at))
+        rows.sort(reverse=True)
+        print("standings for this hive (all scouts, shared world):")
+        print(f"  {'scout':16} {'XP':>5}  {'rank':12} {'solved':>9} "
+              f"{'visited':>8} {'streak':>7}  now in")
+        for xp, name, rk, solved, att, disc, streak, vic, at in rows:
+            flag = " *CLEAR*" if vic else ""
+            print(f"  {name:16} {xp:>5}  {rk:12} {solved:>4}/{att:<4} "
+                  f"{disc:>8} {streak:>7}  {at}{flag}")
+    elif cmd == "rescout":
+        from .rescout import rescout as _rescout
+        target = Path(rest[0]) if rest else Path(world.repo)
+        r = _rescout(world, target)
+        if r.get("error"):
+            raise GameError(r["error"])
+        if not r.get("moved"):
+            print("the ground is quiet - no new commits since the "
+                  f"world was last pinned ({world.sha[:10]})")
+            mine = [qid for qid in r.get("standing", [])
+                    if qid not in s.resolved]
+            if mine:
+                print(f"but the last tremor's AFTERSHOCK quest(s) still "
+                      f"stand for you: {', '.join(mine)} - "
+                      f"'buzz quest <id>' to take them on")
+            elif r.get("standing"):
+                print("(you already settled every aftershock on record)")
+        else:
+            world.save(game_dir() / "world.json")
+            print(f"the hive MOVED: {r['commits']} new commit(s) since "
+                  f"your pin (now re-pinned to {r['new_sha'][:10]})")
+            if r["zones"]:
+                print("disturbed districts: " + ", ".join(r["zones"]))
+            top = list(r["disturbed"].items())[:6]
+            if top:
+                print("most-shaken modules: "
+                      + ", ".join(f"{m} ({n})" for m, n in top))
+            if r["aftershocks"]:
+                print(f"AFTERSHOCK quest(s) spawned: "
+                      f"{', '.join(r['aftershocks'])} - "
+                      f"'buzz quest <id>' to take them on")
+    elif cmd == "atlas":
+        from .atlas import write_atlas
+        p = write_atlas(world, s, game_dir() / "atlas.html")
+        print(f"atlas rendered: {p.resolve()}")
+        print("open it in a browser; regenerate after moving")
+    elif cmd == "recap":
+        from .recap import render_recap
+        text = render_recap(world, s)
+        p = game_dir() / "field_notes.md"
+        p.write_text(text)
+        print(text)
+        print(f"\n(saved to {p.resolve()})")
+    elif cmd == "trace":
+        if len(rest) < 2:
+            raise GameError("usage: buzz trace <module> <module> [module ...]")
+        mods = [engine.resolve_module(world, x) for x in rest]
+        print("\n".join(engine.trace(world, s, mods)))
+    elif cmd == "chronicle":
+        if not rest:
+            raise GameError("usage: buzz chronicle <module>")
+        print("\n".join(engine.chronicle(world, s, rest[0])))
+    elif cmd == "who":
+        if not rest:
+            raise GameError("usage: buzz who <module>")
+        print("\n".join(engine.who(world, rest[0], s)))
+    elif cmd == "probe":
+        if len(rest) < 2:
+            raise GameError("usage: buzz probe <module> <suspect> [suspect ...]")
+        a = engine.resolve_module(world, rest[0])
+        for other in rest[1:]:
+            b = engine.resolve_module(world, other)
+            engine._name_seen(s, a, b)
+            print(f"[{a} x {b}]")
+            print(engine.probe(world, a, b))
+    elif cmd == "hint":
+        if not rest:
+            raise GameError("usage: buzz hint <id>")
+        lvl, text = engine.hint(world, s, rest[0])
+        print(f"oracle hint {lvl}: {text}")
+    elif cmd == "status":
+        print(render.render_status(world, s))
+    else:
+        raise GameError(f"unknown command '{cmd}' - try: buzz help")
 
 
 if __name__ == "__main__":
