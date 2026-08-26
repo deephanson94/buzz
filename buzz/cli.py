@@ -262,8 +262,26 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
         print(render.render_question(world, s, q))
     elif cmd == "scout":
         if not rest:
-            raise GameError("usage: buzz scout <zone-id-or-name>")
-        zid = engine.resolve_zone(world, " ".join(rest))
+            raise GameError("usage: buzz scout <district>  (z1, z2, or a "
+                            "district name - 'map' lists them)")
+        try:
+            zid = engine.resolve_zone(world, " ".join(rest))
+        except GameError:
+            # they probably named a MODULE - do what they meant when the
+            # map already shows where it lives (fog rules permitting)
+            try:
+                m = engine.resolve_module(world, rest[0])
+            except GameError:
+                raise GameError(f"no district called '{' '.join(rest)}' - "
+                                f"scout takes a district (z1, z2...); "
+                                f"'map' lists them")
+            if m not in s.seen or m in render.masked_modules(world, s):
+                raise GameError(f"{m} is a module, and its district is "
+                                f"still unknown to you - scout takes a "
+                                f"district id like z1")
+            zid = world.modules[m].zone
+            print(f"({m} is a module - scouting its district, "
+                  f"{world.zones[zid].name})")
         gained = engine.scout(world, s, zid)
         masked = render.masked_modules(world, s)
         hidden_here = [m for m in world.zones[zid].members if m in masked]
@@ -464,8 +482,15 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
         print(f"oracle hint {lvl}: {text}")
     elif cmd == "status":
         print(render.render_status(world, s))
+    elif cmd in ("words", "glossary", "jargon"):
+        print(render.GLOSSARY)
     else:
-        raise GameError(f"unknown command '{cmd}' - try: buzz help")
+        import difflib
+        from .shell import COMMANDS
+        close = difflib.get_close_matches(cmd, COMMANDS, n=1, cutoff=0.6)
+        hint = f" - did you mean '{close[0]}'?" if close else ""
+        raise GameError(f"unknown command '{cmd}'{hint} ('help' lists "
+                        f"the moves, 'words' explains the vocabulary)")
 
 
 if __name__ == "__main__":

@@ -362,3 +362,40 @@ Clear 2 zones to open the boss lair. The boss plus 3 cleared districts is
 CAMPAIGN CLEAR - the win. Districts beyond that are optional endgame; clear
 them all for the FULL CLEAR title.
 """
+
+
+GLOSSARY = """the hive's words, in plain language:
+
+  module          one source file. The rooms of the game.
+  district (zone) a cluster of modules that belong together, found by
+                  community detection on the import graph. Ids: z1, z2...
+                  Commands take either the id or the name.
+  edge            one import: 'pixie -> adbc' means pixie imports adbc.
+  top-level       an import at the top of a file. Always runs when the
+                  file loads - these carry breakage.
+  sealed tunnel   an import hidden INSIDE a function. Invisible (# ???)
+                  until a cycle quest unlocks tunnel-vision.
+  types-only      an import used only for type hints. Never runs.
+  the fog         files you have not seen yet.
+  scout           send scouts over a district: you learn the NAMES of its
+                  files, nothing else.
+  spyglass        'look <m>': read a file you can see without moving.
+  probe           ask how two files are related: import edges between
+                  them plus commits that touched both.
+  trace           dry-run a chain of imports - free, no attempt spent.
+  who             list every file that imports one.
+  chronicle       one file's commit history, from git.
+  blast radius    everything that (transitively) imports a file - what
+                  could break when it changes.
+  ghost edge      two files with NO import between them that git shows
+                  changing together constantly - hidden coupling.
+  boss            the repo's center of gravity: highest churn x
+                  centrality. Its quests are the endgame.
+  bedrock/gate/   roles from metrics: bedrock = stable + widely imported;
+  swamp           gate = a chokepoint on many paths; swamp = many authors
+                  and heavy rework.
+  streak          consecutive clean solves: +5% XP each, halves on a miss.
+  scout's         a one-liner written by an AI, clearly marked, worth
+  impression      0 XP - flavor, never ground truth.
+
+(back to the moves: help)"""
