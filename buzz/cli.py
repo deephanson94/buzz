@@ -343,7 +343,12 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
             raise GameError("usage: buzz answer <id> [verb] <answer...>")
         pre_log = len(s.log)
         pre_victory = s.victory
+        from .badges import earned as _earned
+        pre_badges = {n for n, _ in _earned(world, s)}
         r = engine.answer(world, s, qid, verb, params)
+        for bn, bd in _earned(world, s):
+            if bn not in pre_badges:
+                s.log.append(f"badge earned: {bn} - {bd}")
         lesson = r["q"].lesson or engine.LESSONS.get(r["q"].qtype)
         prior_lessons = set()
         for q2 in s.resolved:
@@ -486,6 +491,56 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
             engine._name_seen(s, a, b)
             print(f"[{a} x {b}]")
             print(engine.probe(world, a, b))
+    elif cmd == "exam":
+        from . import exam as _exam
+        if not rest:
+            r = _exam.start(world, s)
+            q = r["q"]
+            if r.get("resumed"):
+                print(f"exam in progress - picking up where you were "
+                      f"(answers already given stand):")
+            else:
+                print(f"THE EXAM - recall, no tools, no hints, one "
+                      f"attempt each, 0 XP. {r['total']} questions from "
+                      f"your OLDEST solves - that is where forgetting "
+                      f"lives. Retention is the score.")
+            print(f"\n[{r['i'] + 1}/{r['total']}] {_exam.clean_prompt(q)}")
+            print("answer with: buzz exam <your answer...>")
+        else:
+            from .badges import earned as _earned
+            pre_badges = {n for n, _ in _earned(world, s)}
+            r = _exam.grade(world, s, rest)
+            from .ui import paint
+            print(paint("RECALLED." if r["ok"] else "slipped away.",
+                        "green" if r["ok"] else "yellow"))
+            if not r["ok"]:
+                print(f"  it was: {r['truth']}  (you proved this once - "
+                      f"'buzz quest {r['q'].id}' re-reads it)")
+            if r["done"]:
+                print(f"\nexam over: {r['pct']}% retention "
+                      f"({len(s.exam['correct'])}/{r['total']}) - "
+                      f"title: {r['title']}"
+                      + (f" · personal best {r['best']}%"
+                         if r["best"] != r["pct"] else ""))
+                for bn, bd in _earned(world, s):
+                    if bn not in pre_badges:
+                        print(paint(f">>> BADGE EARNED: {bn.upper()} - "
+                                    f"{bd} <<<", "magenta"))
+                        s.log.append(f"badge earned: {bn} - {bd}")
+                print("(retention fades - re-examine after your next "
+                      "session away)")
+            else:
+                q = r["next"]
+                print(f"\n[{r['i'] + 1}/{r['total']}] "
+                      f"{_exam.clean_prompt(q)}")
+                print("answer with: buzz exam <your answer...>")
+    elif cmd == "badges":
+        from .badges import progress
+        print("badges of this hive:")
+        for name, desc, ok, note in progress(world, s):
+            mark = "*" if ok else " "
+            tail = f" {note}" if note else ""
+            print(f"  [{mark}] {name:12} - {desc}{tail}")
     elif cmd in ("notes", "facts"):
         # the mid-run glance every panel asked for: just the lessons, no
         # wall of recap - keeps 'I am learning' alive between beats

@@ -92,5 +92,14 @@ def render_recap(world: World, s: Session) -> str:
         if unread:
             lines.append(f"- ...plus {unread} module(s) sighted but not "
                          f"yet read")
+    from .badges import earned
+    got = earned(world, s)
+    if got or s.exam.get("best"):
+        lines += ["", "## Honors", ""]
+        for name, desc in got:
+            lines.append(f"- {name}: {desc}")
+        if s.exam.get("best"):
+            lines.append(f"- Exam retention (best): {s.exam['best']}% - "
+                         f"recall proven without tools")
     lines += ["", f"(regenerate anytime: buzz recap)"]
     return "\n".join(lines)
