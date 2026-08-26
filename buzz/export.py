@@ -33,8 +33,9 @@ def export(world: World, s: Session, out_dir: Path) -> tuple[Path, list[str]]:
     lines = [
         f"# Onboarding pack - {Path(world.repo).name}",
         "",
-        f"Built from a buzz run on {datetime.date.today().isoformat()} "
-        f"(repo at commit {world.sha[:10]}).",
+        f"Built from a buzz run on {datetime.date.today().isoformat()}.",
+        f"Source: `{world.repo}` at commit `{world.sha[:10]}` - point "
+        f"your editor there.",
         f"The run covered {len(set(s.discovered))} of "
         f"{len(world.modules)} modules across {len(world.zones)} "
         f"district(s), and proved {solved} fact(s) about how this "
@@ -57,6 +58,22 @@ def export(world: World, s: Session, out_dir: Path) -> tuple[Path, list[str]]:
         "written from memory.",
         "3. Better still: run your own hunt. `pip install` buzz, then "
         f"`buzz analyze <path-to-{Path(world.repo).name}> && buzz play`.",
+    ]
+    # where this survey stopped - so the next scout continues instead of
+    # restarting (wave-3 audit: a raw percentage is not a handover)
+    unseen_zones = [z.name for z in world.zones.values()
+                    if not any(m in set(s.seen) for m in z.members)]
+    open_q = sum(1 for q in world.questions.values()
+                 if q.id not in s.resolved)
+    if unseen_zones or open_q:
+        lines += ["", "## Where this survey stopped", ""]
+        if unseen_zones:
+            lines.append("- Districts never reached: "
+                         + ", ".join(sorted(unseen_zones)))
+        if open_q:
+            lines.append(f"- {open_q} quest(s) still open - `buzz play` "
+                         f"in the same game directory picks them up.")
+    lines += [
         "",
         "*Assembled by buzz - the map is not the territory, but this "
         "map was surveyed on foot.*",
