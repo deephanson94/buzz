@@ -214,7 +214,9 @@ def render_status(world: World, s: Session) -> str:
         + (f" | solved: {solved}/{attempted} attempted"
            f" ({clean} clean - no hints, no retries)"
            if attempted else ""),
-        f"coverage: {d}/{total} modules discovered",
+        f"coverage: {d}/{total} modules read, {len(s.seen)}/{total} surveyed "
+        f"(read = visited/spyglassed; surveyed = named by scouting, probing, "
+        f"or quest work - both are real reconnaissance)",
         f"zones cleared: {len(s.cleared)}/"
         f"{sum(1 for z in world.zones if any(q.zone == z and not q.boss for q in world.questions.values()))}"
         f" clearable"
@@ -321,8 +323,10 @@ top-level chains.
 The economy: a wrong answer never subtracts XP or removes progress - it
 reveals the truth (and may spawn a follow-up quest). But it is not free
 information either: walk/region quests burn a retry (-30% of that quest's
-XP each), hints discount that quest, and any miss, hint, or retry resets
+XP each), hints discount that quest, and any miss, hint, or retry HALVES
 your streak - clean first-try solves stack a +5%-per-solve XP bonus.
+Module names are forgiving: any unique tail works ('backend' or
+'trunkline.backend' both name transports.trunkline.backend).
 Clear 2 zones to open the boss lair. The boss plus 3 cleared districts is
 CAMPAIGN CLEAR - the win. Districts beyond that are optional endgame; clear
 them all for the FULL CLEAR title.

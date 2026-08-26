@@ -61,6 +61,10 @@ def resolve_module(world: World, name: str) -> str:
             if m.lower().split(".")[-1].lstrip("_") == low]
     if len(sufx) == 1:
         return sufx[0]
+    if not sufx:  # dotted tail: 'trunkline.backend' names transports.trunkline.backend
+        sufx = [m for m in world.modules if m.lower().endswith("." + low)]
+        if len(sufx) == 1:
+            return sufx[0]
     if len(exact) > 1 or len(sufx) > 1:
         raise GameError(f"'{name}' is ambiguous: {', '.join(exact or sufx)}")
     raise GameError(f"no module called '{name}' in this hive")
@@ -250,7 +254,10 @@ def _award(s: Session, q: Question, frac: float) -> int:
                               * (1 + streak_bonus))))
     s.xp += gained
     s.max_xp += q.xp
-    s.streak = s.streak + 1 if clean else 0
+    # soft decay, not a hard reset: one slip halves the streak instead of
+    # erasing it (a panel found hard resets punished guess-heavy quest
+    # types out of proportion)
+    s.streak = s.streak + 1 if clean else s.streak // 2
     return gained
 
 
@@ -288,7 +295,9 @@ def _explain(world: World, q: Question) -> str:
                 f"{t['dst']} ({t['born_dst']})")
     if q.qtype == "patch":
         return (f"the chronicle confirms: \"{t['subject']}\" ({t['date']}) "
-                f"moved {t['anchor']} and {t['module']} in one commit")
+                f"moved {t['anchor']} and {t['module']} in one commit"
+                + (" - fresh history your pinned world never saw"
+                   if t.get("aftershock") else ""))
     if q.qtype == "scar":
         return (f"{t['module']} bears the scar: \"{t['subject']}\" "
                 f"({t['date']}) was rolled back")
@@ -472,7 +481,7 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
     else:
         s.resolved[q.id] = "revealed"
         s.max_xp += q.xp
-        s.streak = 0
+        s.streak //= 2
         if q.followup_of is None and q.id not in s.followups:
             fu = make_followup(world, q, len(s.followups))
             if fu:
@@ -511,6 +520,14 @@ def boss_needed(world: World) -> int:
 
 
 def _post_answer(world: World, s: Session, q: Question) -> None:
+    # a staged boss needs a beat between stages, not a silent unlock
+    if q.boss and q.truth.get("stage"):
+        nxt = next((x for x in world.questions.values()
+                    if x.boss and x.truth.get("prev_stage") == q.id
+                    and x.id not in s.resolved), None)
+        if nxt:
+            s.log.append(f"boss stage {q.truth['stage']} falls - stage "
+                         f"{nxt.truth['stage']} unseals: buzz quest {nxt.id}")
     if q.qtype == "cycle" and TUNNEL not in s.abilities:
         s.abilities.append(TUNNEL)
         s.log.append("ability unlocked: tunnel-vision")
@@ -643,9 +660,9 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
         s.hints[q.id] = 2
         return 2, text + "  (XP for this quest now -50%)"
     # level 3: the oracle tells all, but YOU still close the quest - submit
-    # the answer with buzz answer (0 XP at this hint level; streak resets)
+    # the answer with buzz answer (0 XP at this hint level; streak halves)
     s.hints[q.id] = 3
-    s.streak = 0
+    s.streak //= 2
     text = _explain(world, q)
     for m in _modules_in_truth(q):
         if m in world.modules and m not in s.seen:
@@ -687,6 +704,15 @@ def probe(world: World, a: str, b: str) -> str:
     else:
         lines.append("co-change: nothing notable on record (not in either "
                      "module's top-10 co-change partners)")
+    # the pre-guess signal patch quests were missing: the chronicle withholds
+    # WHO moved with a module, but probing a specific pair is a hypothesis
+    # test - it earns the date evidence for that pair and nothing more
+    pair = [ev for ev in world.events + world.reverts
+            if a in ev["mods"] and b in ev["mods"]]
+    if pair:
+        dates = ", ".join(ev["date"] for ev in pair[:4])
+        lines.append(f"focused commits moving BOTH in one patch: {len(pair)}"
+                     f"  (dates: {dates}{', …' if len(pair) > 4 else ''})")
     return "\n".join(lines)
 
 

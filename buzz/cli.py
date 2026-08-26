@@ -266,18 +266,21 @@ def main(argv: list[str] | None = None) -> None:
                 except Exception:
                     continue
                 solved = sum(1 for v in other.resolved.values() if v == "correct")
+                here = other.here
+                at = (world.zones[world.modules[here].zone].name
+                      if here in world.modules else "?")
                 rows.append((other.xp, p.stem, engine.rank(world, other),
                              solved, len(other.resolved),
                              len(other.discovered), other.streak,
-                             other.victory))
+                             other.victory, at))
             rows.sort(reverse=True)
             print("standings for this hive (all scouts, shared world):")
             print(f"  {'scout':16} {'XP':>5}  {'rank':12} {'solved':>9} "
-                  f"{'visited':>8} {'streak':>7}")
-            for xp, name, rk, solved, att, disc, streak, vic in rows:
+                  f"{'visited':>8} {'streak':>7}  now in")
+            for xp, name, rk, solved, att, disc, streak, vic, at in rows:
                 flag = " *CLEAR*" if vic else ""
                 print(f"  {name:16} {xp:>5}  {rk:12} {solved:>4}/{att:<4} "
-                      f"{disc:>8} {streak:>7}{flag}")
+                      f"{disc:>8} {streak:>7}  {at}{flag}")
         elif cmd == "rescout":
             from .rescout import rescout as _rescout
             target = Path(rest[0]) if rest else Path(world.repo)
@@ -285,8 +288,16 @@ def main(argv: list[str] | None = None) -> None:
             if r.get("error"):
                 raise GameError(r["error"])
             if not r.get("moved"):
-                print("the hive is exactly as you left it - nothing moved "
-                      f"since {world.sha[:10]}")
+                print("the ground is quiet - no new commits since the "
+                      f"world was last pinned ({world.sha[:10]})")
+                mine = [qid for qid in r.get("standing", [])
+                        if qid not in s.resolved]
+                if mine:
+                    print(f"but the last tremor's AFTERSHOCK quest(s) still "
+                          f"stand for you: {', '.join(mine)} - "
+                          f"'buzz quest <id>' to take them on")
+                elif r.get("standing"):
+                    print("(you already settled every aftershock on record)")
             else:
                 world.save(game_dir() / "world.json")
                 print(f"the hive MOVED: {r['commits']} new commit(s) since "

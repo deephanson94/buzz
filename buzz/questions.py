@@ -294,11 +294,17 @@ def gen_ghost(world: World, zone_id: str, boss: bool = False,
         topn = partners[0][1]
         mult = BOSS_XP_MULT if boss else 1
         # a bounded suspect list turns this into hypothesis-testing with
-        # probe, not blind enumeration of the whole hive
-        decoys = [m for m in sorted(
+        # probe, not blind enumeration of the whole hive. Decoys that also
+        # co-change with x (just less) make the probe readings a contest,
+        # not a lone nonzero number in a row of zeros
+        near = [o for o, n in world.cochange.get(x, [])
+                if o not in accepted and o != x
+                and not world.has_edge(x, o) and not world.has_edge(o, x)]
+        cold = [m for m in sorted(
             world.modules, key=lambda m: -world.modules[m].commits)
-            if m != x and m not in accepted
-            and not world.has_edge(x, m) and not world.has_edge(m, x)][:4]
+            if m != x and m not in accepted and m not in near
+            and not world.has_edge(x, m) and not world.has_edge(m, x)]
+        decoys = (near + cold)[:4]
         suspects = sorted([accepted[0]] + decoys)
         # deliberately no exact commit count in the prompt - playtesters
         # string-matched it against probe output instead of reasoning
@@ -461,9 +467,15 @@ def gen_patch(world: World, zone_id: str, used: set | None = None) -> int:
     if not scored:
         return 0
     surprising, _, ev, m, other = scored[0]
-    decoys = [d for d in sorted(world.modules,
-                                key=lambda x: -world.modules[x].commits)
-              if d not in (m, other)][:4]
+    # decoys that ALSO share focused history with the anchor keep the quest
+    # a puzzle now that probe reports pair evidence: several suspects read
+    # nonzero, and only the DATE settles which patch the chronicle means
+    hist = sorted({x for e2 in world.events + world.reverts
+                   if m in e2["mods"] for x in e2["mods"]} - {m, other})
+    cold = [d for d in sorted(world.modules,
+                              key=lambda x: -world.modules[x].commits)
+            if d not in (m, other) and d not in hist]
+    decoys = (hist + cold)[:4]
     suspects = sorted([other] + decoys)
     used.add(_sig("patch", zone_id))
     used.add(_sig("patch", *sorted((m, other))))
@@ -471,8 +483,9 @@ def gen_patch(world: World, zone_id: str, used: set | None = None) -> int:
        f"A page from the hive's chronicle, {ev['date']}: "
        f"\"{ev['subject']}\". That patch touched {m} - and exactly ONE "
        f"other module in the whole hive had to move in the very same "
-       f"commit. Suspects: {', '.join(suspects)}. Point at the companion: "
-       f"answer point <module>.",
+       f"commit. Suspects: {', '.join(suspects)}. Probe each pair for "
+       f"shared patches ('buzz probe {m} <suspect>') and match the DATE. "
+       f"Point at the companion: answer point <module>.",
        {"module": other, "anchor": m, "subject": ev["subject"],
         "date": ev["date"], "suspects": suspects, "surprising": surprising},
        xp=25, distance=2)
@@ -613,7 +626,9 @@ def generate_questions(world: World) -> None:
     # generous caps: the bracketing gate (buzz calibrate) prunes shallow
     # and broken questions afterward, so generation runs wide - scaled so a
     # big repo's post-calibration world isn't clearable at 5% coverage
-    CAPS = {"cycle": 2, "region": 6, "hub": 3, "ghost": 8, "gate": 6,
+    # region tightened 6 -> 4: by the fifth blast radius panels reported
+    # re-running the same worksheet, not learning
+    CAPS = {"cycle": 2, "region": 4, "hub": 3, "ghost": 8, "gate": 6,
             "place": 5, "elder": 5, "hotspot": 5, "patch": 6, "scar": 3}
 
     def capped(qt: str) -> bool:

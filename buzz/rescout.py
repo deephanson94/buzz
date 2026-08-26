@@ -50,8 +50,13 @@ def rescout(world: World, repo: Path) -> dict:
                              capture_output=True, text=True).stdout.strip()
     if not new_sha:
         return {"error": "not a git repository"}
+    # aftershocks already rumbling in this shared world (another scout's
+    # rescout may have re-pinned it): report them instead of implying
+    # nothing ever happened - a panel hit exactly this and called it a bug
+    standing = [q.id for q in world.questions.values()
+                if q.truth.get("aftershock")]
     if new_sha == world.sha:
-        return {"moved": False}
+        return {"moved": False, "standing": standing}
     commits = _log_since(repo, world.sha)
     if commits is None:
         return {"error": f"cannot diff {world.sha[:10]}..HEAD (shallow clone?)"}
@@ -75,22 +80,34 @@ def rescout(world: World, repo: Path) -> dict:
     made = []
     for c, a, b in aftershocks[:MAX_AFTERSHOCKS]:
         qid = f"q{len(world.questions) + 1}"
-        suspects = sorted({b} | set(
-            sorted(world.modules, key=lambda x: -world.modules[x].commits)[:5]
-        ) - {a})[:5]
-        if b not in suspects:
-            suspects = sorted(suspects[:4] + [b])
+        # decoys that share pinned history with the anchor keep probe
+        # readings a contest: the fresh date, not any nonzero count, is
+        # what singles out the aftershock's companion
+        hist = sorted({x for e2 in world.events + world.reverts
+                       if a in e2["mods"] for x in e2["mods"]} - {a, b})
+        cold = [d for d in sorted(world.modules,
+                                  key=lambda x: -world.modules[x].commits)
+                if d not in (a, b) and d not in hist]
+        suspects = sorted([b] + (hist + cold)[:4])
         world.questions[qid] = Question(
             id=qid, zone=world.modules[a].zone, qtype="patch", verb="point",
             prompt=(f"AFTERSHOCK - the hive moved while you were away. "
                     f"On {c['date']} a fresh change landed: "
                     f"\"{c['subject'][:110]}\". It touched {a} - and exactly "
-                    f"one other module had to move with it. "
-                    f"Suspects: {', '.join(suspects)}. "
+                    f"one other module had to move with it. This record is "
+                    f"FRESH: it postdates your pinned world, so your map and "
+                    f"atlas have NOT caught up - only the chronicle felt the "
+                    f"tremor. Suspects: {', '.join(suspects)}. Probe each "
+                    f"pair ('buzz probe {a} <suspect>') and match the date. "
                     f"Point at the companion: answer point <module>."),
             truth={"module": b, "anchor": a, "subject": c["subject"][:110],
-                   "date": c["date"], "suspects": suspects},
+                   "date": c["date"], "suspects": suspects,
+                   "aftershock": True},
             xp=25, distance=2)
+        # the tremor enters the record: probe/chronicle can now feel it
+        # (chronicle keeps withholding companions while the quest is open)
+        world.events.append({"date": c["date"], "subject": c["subject"][:110],
+                             "mods": [a, b]})
         made.append(qid)
 
     zones_hit = sorted({world.zones[world.modules[m].zone].name

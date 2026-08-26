@@ -10,12 +10,39 @@ from .engine import _explain, get_question, rank, coverage, LESSONS
 def render_recap(world: World, s: Session) -> str:
     d, total = coverage(world, s)
     name = world.repo.rsplit("/", 1)[-1]
+    disc, seen = set(s.discovered), set(s.seen)
     lines = [
         f"# Field notes: {name}",
         "",
         f"Scouted by a {rank(world, s)} - {len(s.resolved)}/"
-        f"{len(world.questions)} quests resolved, {d}/{total} modules "
-        f"visited, {s.xp} XP. Pinned to commit {world.sha[:10]}.",
+        f"{len(world.questions)} quests resolved, {d}/{total} modules read, "
+        f"{len(seen)}/{total} surveyed (scouted, probed, or named by quest "
+        f"work), {s.xp} XP. Pinned to commit {world.sha[:10]}.",
+        "",
+        "## The hive at a glance",
+        "",
+    ]
+    # the repo's own one-liner, when its root package was read
+    root = min(world.modules.values(), key=lambda m: len(m.name))
+    if root.name in disc and root.doc:
+        lines += [f"{name}: {root.doc}", ""]
+    # one line per district actually reached - built from the docstrings and
+    # roles this run surfaced, so a newcomer gets the shape, not a quest log
+    for z in sorted(world.zones.values(), key=lambda z: z.order):
+        hit = [m for m in sorted(z.members) if m in seen]
+        if not hit:
+            continue  # still under fog - the notes only report what was seen
+        notable = sorted(hit, key=lambda m: (-world.modules[m].in_degree,
+                                             -world.modules[m].commits))[:4]
+        bits = []
+        for m in notable:
+            mod = world.modules[m]
+            tag = f" [{mod.role}]" if mod.role else ""
+            doc = f' "{mod.doc}"' if m in disc and mod.doc else ""
+            bits.append(f"{m}{tag}{doc}")
+        lines.append(f"- **{z.name}** - {len(hit)}/{len(z.members)} modules "
+                     f"surveyed. Key parts: {'; '.join(bits)}.")
+    lines += [
         "",
         "## What this run established (in the order it was learned)",
         "",
@@ -48,5 +75,15 @@ def render_recap(world: World, s: Session) -> str:
                   f"({b.commits} commits, {b.authors} authors, "
                   f"{b.in_degree} direct importers). Review changes to it "
                   f"hardest."]
+    directory = [m for m in sorted(world.modules) if m in seen]
+    if directory:
+        lines += ["", "## Directory of everything surveyed", ""]
+        for m in directory:
+            mod = world.modules[m]
+            tag = f" [{mod.role}]" if mod.role else ""
+            desc = (mod.doc if m in disc and mod.doc else
+                    ("(read - no docstring)" if m in disc
+                     else "(sighted, not yet read)"))
+            lines.append(f"- {m}{tag} - {desc}")
     lines += ["", f"(regenerate anytime: buzz recap)"]
     return "\n".join(lines)

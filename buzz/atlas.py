@@ -75,7 +75,9 @@ def render_atlas(world: World, s: Session) -> str:
 
     for z in sorted(world.zones.values(), key=lambda z: z.order):
         x, y, w, h = boxes[z.id]
-        known = z.id in {world.modules[m].zone for m in disc}
+        # sighting ONE member names the district (panels found '???' over a
+        # half-scouted zone read as a bug, not fog)
+        known = any(m in seen for m in z.members)
         title = z.name if known else "??? unexplored district"
         zq = [q for q in world.questions.values() if q.zone == z.id and not q.boss]
         done = sum(1 for q in zq if q.id in s.resolved)
@@ -131,9 +133,15 @@ def render_atlas(world: World, s: Session) -> str:
                              + (f" · born {mod.born}" if mod.born else "")),
                        "i": "imports: " + (", ".join(outs) or "nothing internal")}
         else:
-            info[m] = {"t": f"{m} — seen, not yet visited", "d": zname,
-                       "s": "fly there (buzz go) or spyglass it (buzz look) "
-                            "for detail", "i": ""}
+            # a sighted-but-unread module still has public facts: its role
+            # and churn are on the map and in every edges/status readout -
+            # only its file contents (docstring, imports) stay behind a read
+            info[m] = {"t": f"{m} — {mod.role or 'worker'}, seen, not yet read",
+                       "d": zname,
+                       "s": (f"{mod.commits} commits · {mod.authors} authors"
+                             + (f" · born {mod.born}" if mod.born else "")),
+                       "i": "spyglass it (buzz look) or fly there (buzz go) "
+                            "to read its imports"}
     info_json = _json.dumps(info)
     name = world.repo.rsplit("/", 1)[-1]
     header = (f"THE HIVE · {html.escape(name)} · quests "

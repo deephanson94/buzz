@@ -416,14 +416,14 @@ def test_streak_bonus_and_reset(world):
     r = engine.answer(world, s, q.id, "walk", q.truth["example"])
     assert r["correct"] and r["gained"] == round(q.xp * 1.2)
     assert s.streak == 5
-    # a reveal breaks the streak
+    # a full reveal HALVES the streak (soft decay, never a hard reset)
     s2 = engine.new_session(world)
     s2.streak = 3
     cyc = next(q for q in world.questions.values() if q.qtype == "cycle")
     engine.hint(world, s2, cyc.id)
     engine.hint(world, s2, cyc.id)
     engine.hint(world, s2, cyc.id)
-    assert s2.streak == 0
+    assert s2.streak == 1
 
 
 def test_patch_and_scar_verbs():
@@ -495,6 +495,15 @@ def test_rescout_aftershocks(repo, world, tmp_path):
         qid = r["aftershocks"][0]
         q = w2.questions[qid]
         assert q.qtype == "patch" and q.truth["module"] in q.truth["suspects"]
+        assert q.truth.get("aftershock") is True
+        # the fresh commit entered the record, so probe can feel it
+        out = engine.probe(w2, q.truth["anchor"], q.truth["module"])
+        assert "moving BOTH" in out
+    # a second rescout with no new commits reports the standing aftershocks
+    # instead of implying nothing ever happened (round-13 bug)
+    r2 = rescout(w2, repo)
+    assert not r2["moved"]
+    assert set(r2["standing"]) == set(r["aftershocks"])
 
 
 def test_atlas_renders(world):
@@ -512,3 +521,48 @@ def test_recap_contains_solved_fact(world):
     engine.answer(world, s, q.id, "walk", q.truth["example"])
     text = render_recap(world, s)
     assert "Field notes" in text and "one real chain" in text
+    # onboarding sections: district overview + directory of surveyed modules
+    assert "hive at a glance" in text
+    assert "Directory of everything surveyed" in text
+    assert "surveyed" in text.splitlines()[2]  # header credits survey work
+
+
+def test_resolve_dotted_suffix():
+    from buzz.model import World, Module
+    w = World(repo="x", sha="y")
+    for n in ("transports.trunkline.backend", "core.engine", "core.utils"):
+        w.modules[n] = Module(name=n, path=n, zone="z1")
+    assert engine.resolve_module(w, "trunkline.backend") == \
+        "transports.trunkline.backend"
+    assert engine.resolve_module(w, "backend") == \
+        "transports.trunkline.backend"
+    with pytest.raises(engine.GameError):
+        engine.resolve_module(w, "nowhere.at.all")
+
+
+def test_probe_reports_focused_pair_commits():
+    from buzz.model import World, Module
+    w = World(repo="x", sha="y")
+    for n in ("a", "b", "c"):
+        w.modules[n] = Module(name=n, path=n, zone="z1")
+    w.events.append({"date": "2025-01-05", "subject": "sync defaults",
+                     "mods": ["a", "b"]})
+    out = engine.probe(w, "a", "b")
+    assert "moving BOTH" in out and "2025-01-05" in out
+    assert "moving BOTH" not in engine.probe(w, "a", "c")
+
+
+def test_wrong_answer_halves_streak():
+    from buzz.model import World, Question, Module, Zone, Session
+    w = World(repo="x", sha="y")
+    for n in ("a", "b", "c"):
+        w.modules[n] = Module(name=n, path=n, zone="z1")
+    w.zones["z1"] = Zone(id="z1", name="Z", members=["a", "b", "c"])
+    w.questions["q1"] = Question(
+        id="q1", zone="z1", qtype="patch", verb="point", prompt="",
+        truth={"module": "b", "anchor": "a", "subject": "s",
+               "date": "2024-01-01", "suspects": ["b", "c"]}, xp=25)
+    s = Session(here="a", discovered=["a"], seen=["a"])
+    s.streak = 5
+    engine.answer(w, s, "q1", "point", ["c"])
+    assert s.streak == 2  # halved, not zeroed

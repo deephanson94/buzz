@@ -23,10 +23,20 @@ applied between rounds. Passing bar: 8/10 on both.
 | 10 | + lore tier, all fixes | **7.17** | 8.00 |
 | 11 | + trace/chronicle, consistency fixes | 6.83 | 7.83 |
 | 12 | synthetic priors-free repo ("waggle") | 6.33 | 7.83* |
+| 13 | + atlas/recap/standings/aftershock/staged boss (feature round, n=4) | 6.25 | 7.75 |
 
 *Round 12 produced the program's deepest individual verdicts (an 8/9 and
 the first 9-learning score) alongside its lowest (4-continue from the
 completionist, who full-cleared with zero mistakes).
+
+Round 13 was a feature-validation round: every new feature was confirmed
+working and worth keeping (the standings' shared-world liveness and the
+staged boss's stage-3 ghost drew the round's best-moments), and its
+convergent asks were shipped immediately after: rescout reporting standing
+aftershocks (a confirmed bug), a live "now in" column on standings, a
+repo-overview + surveyed-directory recap, probe-based pre-guess evidence
+for patch quests, soft streak decay (halve, not reset), atlas zone-name
+reveal on first sighting, and a tighter region cap.
 
 **Learning met the bar** (8.00 across four separate rounds, both repos;
 every claim graph-, git-, or source-checkable). **Continue peaked at 7.17
