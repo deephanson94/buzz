@@ -340,6 +340,9 @@ exploring (free, no XP):
                                summary of the repo)
   buzz standings               leaderboard across every scout playing this
                                hive (sessions share one world)
+  buzz tui                     the OVERWORLD: a walkable map screen - your
+                               bee, the arrow keys, the fog lifting tile
+                               by tile (Enter travels, l looks, Q leaves)
   buzz rescout [repo]          new-game+: see what changed since your
                                world was pinned - disturbed districts,
                                and fresh AFTERSHOCK quests from real new
