@@ -53,14 +53,33 @@ def load_session(world: World) -> Session:
 def cmd_analyze(args: list[str]) -> None:
     from .analyze import analyze
     from .questions import generate_questions
+    lore = "--lore" in args
+    args = [a for a in args if a != "--lore"]
     if not args:
-        raise SystemExit("usage: buzz analyze <repo-path>")
+        raise SystemExit("usage: buzz analyze <repo-path> [--lore]")
     world = analyze(Path(args[0]))
     generate_questions(world)
     world.save(game_dir() / "world.json")
+    if lore:
+        from .lore import run_lore
+        print("authoring the lore layer (an LLM reads the map + source "
+              "heads; answers stay mechanically verified)...")
+        try:
+            r = run_lore(world)
+            world.save(game_dir() / "world.json")
+            print(f"lore: {len(r['added'])} semantic quest(s) added "
+                  f"({len(r['rejected'])} rejected by validation), "
+                  f"{r['zone_briefs']} district brief(s), "
+                  f"{r['glosses']} module gloss(es)")
+        except Exception as e:  # --lore must never break analyze
+            print(f"lore skipped: {e}")
     nq = len(world.questions)
     print(f"world built: {len(world.modules)} modules, {len(world.edges)} edges, "
           f"{len(world.zones)} zones, {nq} quests  (pinned to {world.sha[:10]})")
+    if len(world.modules) < 15 or len(world.edges) < 12:
+        print("(a small hive: few modules, a flat import graph - expect a "
+              "short campaign. buzz bites hardest on big, messy repos you "
+              "don't already know)")
     print("start playing: buzz play")
 
 
@@ -243,8 +262,26 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
         print(render.render_question(world, s, q))
     elif cmd == "scout":
         if not rest:
-            raise GameError("usage: buzz scout <zone-id-or-name>")
-        zid = engine.resolve_zone(world, " ".join(rest))
+            raise GameError("usage: buzz scout <district>  (z1, z2, or a "
+                            "district name - 'map' lists them)")
+        try:
+            zid = engine.resolve_zone(world, " ".join(rest))
+        except GameError:
+            # they probably named a MODULE - do what they meant when the
+            # map already shows where it lives (fog rules permitting)
+            try:
+                m = engine.resolve_module(world, rest[0])
+            except GameError:
+                raise GameError(f"no district called '{' '.join(rest)}' - "
+                                f"scout takes a district (z1, z2...); "
+                                f"'map' lists them")
+            if m not in s.seen or m in render.masked_modules(world, s):
+                raise GameError(f"{m} is a module, and its district is "
+                                f"still unknown to you - scout takes a "
+                                f"district id like z1")
+            zid = world.modules[m].zone
+            print(f"({m} is a module - scouting its district, "
+                  f"{world.zones[zid].name})")
         gained = engine.scout(world, s, zid)
         masked = render.masked_modules(world, s)
         hidden_here = [m for m in world.zones[zid].members if m in masked]
@@ -264,10 +301,20 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
                   f"their place quest is solved - see 'unplaced sightings' "
                   f"on the map)")
     elif cmd == "answer":
-        if len(rest) < 3:
-            raise GameError(
-                "usage: buzz answer <id> <walk|edge|region|place|point|order> ...")
-        qid, verb, params = rest[0], rest[1], rest[2:]
+        if len(rest) < 2:
+            raise GameError("usage: buzz answer <id> [verb] <answer...> - "
+                            "the verb (walk/edge/region/place/point) is "
+                            "optional; the quest already knows its own")
+        qid = rest[0]
+        VERBS = ("walk", "edge", "region", "place", "point", "order")
+        if rest[1] in VERBS:
+            verb, params = rest[1], rest[2:]
+        else:
+            # first dogfooder's question: "what does point even mean?" -
+            # they shouldn't have to know. The quest knows its verb.
+            verb, params = engine.get_question(world, s, qid).verb, rest[1:]
+        if not params:
+            raise GameError("usage: buzz answer <id> [verb] <answer...>")
         pre_log = len(s.log)
         pre_victory = s.victory
         r = engine.answer(world, s, qid, verb, params)
@@ -435,8 +482,15 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
         print(f"oracle hint {lvl}: {text}")
     elif cmd == "status":
         print(render.render_status(world, s))
+    elif cmd in ("words", "glossary", "jargon"):
+        print(render.GLOSSARY)
     else:
-        raise GameError(f"unknown command '{cmd}' - try: buzz help")
+        import difflib
+        from .shell import COMMANDS
+        close = difflib.get_close_matches(cmd, COMMANDS, n=1, cutoff=0.6)
+        hint = f" - did you mean '{close[0]}'?" if close else ""
+        raise GameError(f"unknown command '{cmd}'{hint} ('help' lists "
+                        f"the moves, 'words' explains the vocabulary)")
 
 
 if __name__ == "__main__":

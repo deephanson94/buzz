@@ -40,8 +40,11 @@ def render_recap(world: World, s: Session) -> str:
             tag = f" [{mod.role}]" if mod.role else ""
             doc = f' "{mod.doc}"' if m in disc and mod.doc else ""
             bits.append(f"{m}{tag}{doc}")
-        lines.append(f"- **{z.name}** - {len(hit)}/{len(z.members)} modules "
-                     f"surveyed. Key parts: {'; '.join(bits)}.")
+        impression = (f" _{z.brief}_ (scout's impression, AI-written)."
+                      if z.brief else "")
+        lines.append(f"- **{z.name}** -{impression} {len(hit)}/"
+                     f"{len(z.members)} modules surveyed. "
+                     f"Key parts: {'; '.join(bits)}.")
     lines += [
         "",
         "## What this run established (in the order it was learned)",

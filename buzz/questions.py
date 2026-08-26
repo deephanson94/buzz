@@ -23,6 +23,13 @@ def _sig(qtype: str, *parts) -> tuple:
     return (qtype, *parts)
 
 
+def _small(world: World) -> bool:
+    """A small hive: scripts-repo scale, where the big-repo thresholds
+    starve every generator (first private-repo dogfood: 9 modules, 5
+    edges -> exactly one quest and an instant FULL CLEAR)."""
+    return len(world.modules) < 15 or len(world.edges) < 12
+
+
 def _flavor(world: World, options: list[str]) -> str:
     """Deterministic phrasing rotation so quests don't read as one template
     with nouns swapped."""
@@ -280,7 +287,8 @@ def gen_ghost(world: World, zone_id: str, boss: bool = False,
     for x in pool:
         if _sig("ghost", x) in used:
             continue
-        partners = [(o, n) for o, n in world.cochange.get(x, []) if n >= 12
+        floor = 4 if _small(world) else 12
+        partners = [(o, n) for o, n in world.cochange.get(x, []) if n >= floor
                     and not world.has_edge(x, o) and not world.has_edge(o, x)]
         # the same hidden coupling must never be asked twice from opposite
         # sides (a panel found the boss fight re-asked as a zone quest)
@@ -324,7 +332,7 @@ def gen_ghost(world: World, zone_id: str, boss: bool = False,
            f"{lead} Suspects: {', '.join(suspects)}. Investigate with "
            f"'buzz probe {x} <suspect>' and reason about which one would HAVE "
            f"to move when {x} moves, then draw the ghost edge: "
-           f"answer edge {x} <your-guess>.",
+           f"answer {x} <your-guess>.",
            {"src": x, "accepted": accepted, "best": partners[0][0],
             "shared": topn, "suspects": suspects},
            xp=20 * mult, distance=2, boss=boss)
@@ -338,19 +346,20 @@ def gen_hub(world: World, G: nx.DiGraph, zone_id: str,
     zone. Pushes map-reading; only asked when the answer is unambiguous."""
     zone = world.zones[zone_id]
     used = used if used is not None else set()
-    if _sig("hub", zone_id) in used or len(zone.members) < 4:
+    min_members, min_deg = (3, 2) if _small(world) else (4, 3)
+    if _sig("hub", zone_id) in used or len(zone.members) < min_members:
         return 0
     counts = {m: sum(1 for p in G.predecessors(m) if p in zone.members)
               for m in zone.members}
     ranked = sorted(counts.items(), key=lambda kv: -kv[1])
-    if ranked[0][1] < 3 or ranked[0][1] == ranked[1][1]:
+    if ranked[0][1] < min_deg or ranked[0][1] == ranked[1][1]:
         return 0
     hub, n = ranked[0]
     used.add(_sig("hub", zone_id))
     _q(world, zone_id, "hub", "point",
        f"Every district rests on one load-bearing wall. Which module in "
        f"{zone.name} is imported (top-level) by more of its own district "
-       f"than any other? Point at it: answer point <module>.",
+       f"than any other? Point at it: answer <module>.",
        {"module": hub, "count": n},
        xp=15, distance=n + 1)
     return 1
@@ -363,7 +372,9 @@ def gen_place(world: World, G: nx.DiGraph, zone_id: str,
     zone = world.zones[zone_id]
     used = used if used is not None else set()
     for x in sorted(zone.members, key=lambda m: -world.modules[m].in_degree):
-        if _sig("place", x) in used:
+        if _sig("place", x) in used or x == world.start:
+            # never mask the module the player WAKES UP in (a dogfooder
+            # stood in '??? (unplaced)' on turn one)
             continue
         nbrs = sorted(set(G.predecessors(x)) | set(G.successors(x)))
         if len(nbrs) < 3:
@@ -391,19 +402,23 @@ def gen_elder(world: World, zone_id: str, used: set | None = None) -> int:
     if _sig("elder", zone_id) in used:
         return 0
     dated = [m for m in zone.members
-             if world.modules[m].born and world.modules[m].commits >= 5]
+             if world.modules[m].born
+             and world.modules[m].commits >= (2 if _small(world) else 5)]
     dated.sort(key=lambda m: world.modules[m].born)
     if len(dated) < 2:
         return 0
     old, new = dated[0], dated[-1]
-    if world.modules[old].born[:4] == world.modules[new].born[:4]:
-        return 0  # same year: too close to be interesting or fair
+    # gap must be wide enough to be fair: a year normally; a month on a
+    # young small hive (where a year gap cannot exist yet)
+    cut = 7 if _small(world) else 4
+    if world.modules[old].born[:cut] == world.modules[new].born[:cut]:
+        return 0
     used.add(_sig("elder", zone_id))
     _q(world, zone_id, "elder", "edge",
        f"The elders' dispute. Two residents of {zone.name} both claim to be "
        f"the district's founder: {min(old, new)} and {max(old, new)}. Git "
        f"remembers. Draw time's arrow from the elder to the newcomer: "
-       f"answer edge <older> <newer>.",
+       f"answer <older> <newer>.",
        {"src": old, "dst": new,
         "born_src": world.modules[old].born, "born_dst": world.modules[new].born},
        xp=15, distance=2)
@@ -414,18 +429,19 @@ def gen_hotspot(world: World, zone_id: str, used: set | None = None) -> int:
     """Point at the district's most-reworked module (churn hotspot)."""
     zone = world.zones[zone_id]
     used = used if used is not None else set()
-    if _sig("hotspot", zone_id) in used or len(zone.members) < 4:
+    min_members = 3 if _small(world) else 4
+    if _sig("hotspot", zone_id) in used or len(zone.members) < min_members:
         return 0
     ranked = sorted(zone.members, key=lambda m: -world.modules[m].commits)
     top, second = ranked[0], ranked[1]
     c1, c2 = world.modules[top].commits, world.modules[second].commits
-    if c1 < 10 or c1 < c2 * 1.3:
+    if c1 < (5 if _small(world) else 10) or c1 < c2 * 1.3:
         return 0  # no clear hotspot
     used.add(_sig("hotspot", zone_id))
     _q(world, zone_id, "hotspot", "point",
        f"Storm damage survey. One building in {zone.name} has been rebuilt "
        f"far more often than any other - the district's churn hotspot, where "
-       f"bugs and features keep landing. Point at it: answer point <module>.",
+       f"bugs and features keep landing. Point at it: answer <module>.",
        {"module": top, "commits": c1},
        xp=15, distance=len(zone.members) // 2 + 1)
     return 1
@@ -483,9 +499,10 @@ def gen_patch(world: World, zone_id: str, used: set | None = None) -> int:
        f"A page from the hive's chronicle, {ev['date']}: "
        f"\"{ev['subject']}\". That patch touched {m} - and exactly ONE "
        f"other module in the whole hive had to move in the very same "
-       f"commit. Suspects: {', '.join(suspects)}. Probe each pair for "
-       f"shared patches ('buzz probe {m} <suspect>') and match the DATE. "
-       f"Point at the companion: answer point <module>.",
+       f"commit. Suspects: {', '.join(suspects)}. Unfamiliar names? "
+       f"'buzz look <suspect>' tells you what each one is. Then probe each "
+       f"pair for shared patches ('buzz probe {m} <suspect>') and match "
+       f"the DATE. Point at the companion: answer <module>.",
        {"module": other, "anchor": m, "subject": ev["subject"],
         "date": ev["date"], "suspects": suspects, "surprising": surprising},
        xp=25, distance=2)
@@ -513,7 +530,7 @@ def gen_scar(world: World, zone_id: str, used: set | None = None) -> int:
            f"ROLLED BACK: \"{ev['subject']}\". Somewhere in "
            f"{zone.name} stands the module that bears that scar. Dig "
            f"through the history (git is fair game) and point at it: "
-           f"answer point <module>.",
+           f"answer <module>.",
            {"module": m, "subject": ev["subject"], "date": ev["date"]},
            xp=20, distance=2)
         return 1
@@ -575,7 +592,7 @@ def gen_gate(world: World, G: nx.DiGraph, zone_id: str,
                    f"The gate. Every top-level import route from {a} to {b} "
                    f"squeezes through a single LOCAL chokepoint - remove "
                    f"that one module and {a} loses {b} entirely.{excl} "
-                   f"Point at the chokepoint: answer point <module>.",
+                   f"Point at the chokepoint: answer <module>.",
                    {"a": a, "b": b, "module": g,
                     "accepted": sorted(set(accepted)),
                     "witness": nx.shortest_path(G, a, b)},
@@ -618,7 +635,7 @@ def gen_cut(world: World, G: nx.DiGraph, zone_id: str,
        f"will be deleted outright - {', '.join(cands)}. Every module that "
        f"transitively imports the victim (top-level chains) is stranded "
        f"with it. Which deletion strands the FEWEST other modules?{tie} "
-       f"{EDGE_RULE} Point at the safe demolition: answer point <module>.",
+       f"{EDGE_RULE} Point at the safe demolition: answer <module>.",
        {"module": lows[0], "accepted": lows, "candidates": cands,
         "sizes": sizes},
        xp=25, distance=3)
@@ -669,7 +686,7 @@ def gen_refactor(world: World, G: nx.DiGraph, zone_id: str,
                f"always-run chains). All three cuts change something - but "
                f"not equally. Which single severed import shrinks the "
                f"radius MOST? {EDGE_RULE} Answer with that edge: "
-               f"answer edge <importer> {x}.",
+               f"answer <importer> {x}.",
                {"src": w1, "dst": x, "loser": w3, "base": base,
                 "n_win": n1, "n_lose": n3,
                 "others": [[w2, n2], [w3, n3]]},
@@ -683,7 +700,7 @@ def gen_refactor(world: World, G: nx.DiGraph, zone_id: str,
            f"can reach {x} through always-run chains). Redundant routes "
            f"make some cuts pointless - the reach just flows around them. "
            f"Which single severed import shrinks the radius more? "
-           f"{EDGE_RULE} Answer with that edge: answer edge <importer> {x}.",
+           f"{EDGE_RULE} Answer with that edge: answer <importer> {x}.",
            {"src": winner, "dst": x, "loser": loser, "base": base,
             "n_win": n_win, "n_lose": n_lose},
            xp=30, distance=3)
@@ -733,7 +750,7 @@ def gen_via(world: World, G: nx.DiGraph, zone_id: str,
                    f"The inspection tour. Walk a top-level import chain "
                    f"from {src} all the way to {dst} - but protocol says "
                    f"the tour MUST pass through {via} on the way. "
-                   f"answer walk <module> <module> ... (start at {src}, "
+                   f"answer <module> <module> ... (start at {src}, "
                    f"end at {dst}, {via} somewhere between).",
                    {"src": src, "dst": dst, "via": via, "example": example},
                    xp=10 * (len(example)), distance=len(example))
@@ -807,11 +824,39 @@ def gen_order(world: World, G: nx.DiGraph, zone_id: str,
                    f"only be rewritten AFTER everything it imports "
                    f"(directly or through top-level chains) is already "
                    f"done. {EDGE_RULE} Several valid orders exist - give "
-                   f"ANY one, dependencies first: answer order "
+                   f"ANY one, dependencies first: answer "
                    f"{' '.join('<' + str(i + 1) + '>' for i in range(k))}.",
                    truth, xp=35 if herring else 30, distance=k)
                 return 1
     return 0
+
+def gen_direction(world: World, zone_id: str, count: int = 2,
+                  used: set | None = None) -> int:
+    """Small-hive filler: who imports whom? On a scripts-scale repo there
+    are no multi-hop chains to walk, but edge DIRECTION is still the first
+    thing a newcomer gets wrong - and the game can ask it honestly."""
+    zone = world.zones[zone_id]
+    used = used if used is not None else set()
+    made = 0
+    for e in sorted(world.edges, key=lambda e: (e.src, e.dst)):
+        if made >= count:
+            break
+        if e.kind != TOP or e.src not in zone.members:
+            continue
+        pair = _sig("direction", *sorted((e.src, e.dst)))
+        if pair in used or world.has_edge(e.dst, e.src):
+            continue
+        used.add(pair)
+        a, b = sorted((e.src, e.dst))
+        _q(world, zone_id, "direction", "edge",
+           f"Two residents, one dependency: {a} and {b}. Exactly one of "
+           f"them imports the other (top-level). Getting this backwards is "
+           f"how newcomers break builds - draw the edge the right way: "
+           f"answer <importer> <imported>.",
+           {"src": e.src, "dst": e.dst},
+           xp=10, distance=2)
+        made += 1
+    return made
 
 
 def generate_questions(world: World) -> None:
@@ -947,6 +992,13 @@ def generate_questions(world: World) -> None:
             n += gen_elder(world, z.id, used=used)
         if n < 4 and not capped("hotspot"):
             n += gen_hotspot(world, z.id, used=used)
+        if n < 3 and _small(world):
+            # a small hive has no chains to walk: git-history and edge-
+            # direction quests keep its districts clearable and honest
+            if not capped("patch"):
+                n += gen_patch(world, z.id, used=used)
+            if n < 3:
+                n += gen_direction(world, z.id, count=3 - n, used=used)
         if n < 3:  # thin zone: top up so it stays clearable and worthwhile
             if walk_left(1):
                 n += gen_walk(world, Gtop, z.id, count=1, used=used)
@@ -964,14 +1016,14 @@ def make_followup(world: World, q: Question, n_existing: int) -> dict | None:
         a, b = path[0], path[1]
         prompt = (f"Follow-up: you just saw the chain {' -> '.join(path)}. "
                   f"First hop check - between {a} and {b}, who imports whom? "
-                  f"answer edge <importer> <imported>.")
+                  f"answer <importer> <imported>.")
         truth = {"src": a, "dst": b}
     elif q.qtype == "region":
         x = t["target"]
         member = t["region"][0]
         prompt = (f"Follow-up: {member} was in {x}'s blast radius. Draw the first "
                   f"dependency step: between {member} and {x}, who imports whom? "
-                  f"answer edge <importer> <imported>.")
+                  f"answer <importer> <imported>.")
         truth = {"src": member, "dst": x}
     elif q.qtype == "place":
         x = t["module"]
@@ -982,7 +1034,7 @@ def make_followup(world: World, q: Question, n_existing: int) -> dict | None:
         if x == top or not (world.has_edge(x, top) or world.has_edge(top, x)):
             return None
         prompt = (f"Follow-up: {x} lives in {zname}. Its anchor is {top}. Between "
-                  f"{x} and {top}, who imports whom? answer edge <importer> <imported>.")
+                  f"{x} and {top}, who imports whom? answer <importer> <imported>.")
         src, dst = (x, top) if world.has_edge(x, top) else (top, x)
         truth = {"src": src, "dst": dst}
     else:

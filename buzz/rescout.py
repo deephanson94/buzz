@@ -99,7 +99,7 @@ def rescout(world: World, repo: Path) -> dict:
                     f"atlas have NOT caught up - only the chronicle felt the "
                     f"tremor. Suspects: {', '.join(suspects)}. Probe each "
                     f"pair ('buzz probe {a} <suspect>') and match the date. "
-                    f"Point at the companion: answer point <module>."),
+                    f"Point at the companion: answer <module>."),
             truth={"module": b, "anchor": a, "subject": c["subject"][:110],
                    "date": c["date"], "suspects": suspects,
                    "aftershock": True},

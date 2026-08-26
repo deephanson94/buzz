@@ -117,7 +117,9 @@ def render_look(world: World, s: Session, at: str | None = None) -> str:
         f"file: {m.path} | {m.loc} lines | {m.commits} commits by "
         f"{m.authors} author(s)"
         + (f" | first commit {m.born}" if m.born else ""),
-        *([f'"{m.doc}"'] if m.doc else []),
+        *([f'"{m.doc}"'] if m.doc else
+          [f"~ scout's impression (AI-written, unverified): {m.gloss}"]
+          if m.gloss else []),
         zone_line,
         f"imported by {m.in_degree} module(s)"
         + (": " + ", ".join(sorted(e.src for e in world.in_edges(node) if e.src in s.discovered))
@@ -194,15 +196,26 @@ def render_quests(world: World, s: Session, zone_id: str) -> str:
 
 
 def render_question(world: World, s: Session, q) -> str:
-    syntax = {
-        "walk": f"buzz answer {q.id} walk <module> <module> ... <module>",
-        "edge": f"buzz answer {q.id} edge <importer> <imported>",
-        "region": f"buzz answer {q.id} region <module> <module> ...",
-        "place": f"buzz answer {q.id} place <zone-id-or-name>",
-        "point": f"buzz answer {q.id} point <module>",
-        "order": f"buzz answer {q.id} order <first> <second> ... "
-                 f"(every listed module exactly once, dependencies first)",
-    }[q.verb]
+    # placeholders named for what THIS quest means, not the wire verb - a
+    # dogfooder met 'edge <importer> <imported>' on an elder quest whose
+    # two names mean <older> <newer>
+    shapes = {
+        "elder": "<older> <newer>",
+        "direction": "<importer> <imported>",
+        "ghost": "<one-of-the-pair> <the-other>",
+        "refactor": "<importer> <imported>",
+        "walk": "<module> <module> ... (a chain, one import per hop)",
+        "region": "<module> <module> ... (the whole affected set)",
+        "place": "<district-id-or-name>",
+        "order": "<first> <second> ... (dependencies first)",
+    }
+    by_verb = {"walk": "<module> <module> ...",
+               "edge": "<importer> <imported>",
+               "region": "<module> <module> ...",
+               "place": "<district-id-or-name>",
+               "point": "<module>", "order": "<first> <second> ..."}
+    shape = shapes.get(q.qtype, by_verb[q.verb])
+    syntax = f"buzz answer {q.id} {shape}"
     st = _status_of(s, q.id)
     rule = ""
     if q.verb == "walk":
@@ -361,3 +374,40 @@ Clear 2 zones to open the boss lair. The boss plus 3 cleared districts is
 CAMPAIGN CLEAR - the win. Districts beyond that are optional endgame; clear
 them all for the FULL CLEAR title.
 """
+
+
+GLOSSARY = """the hive's words, in plain language:
+
+  module          one source file. The rooms of the game.
+  district (zone) a cluster of modules that belong together, found by
+                  community detection on the import graph. Ids: z1, z2...
+                  Commands take either the id or the name.
+  edge            one import: 'pixie -> adbc' means pixie imports adbc.
+  top-level       an import at the top of a file. Always runs when the
+                  file loads - these carry breakage.
+  sealed tunnel   an import hidden INSIDE a function. Invisible (# ???)
+                  until a cycle quest unlocks tunnel-vision.
+  types-only      an import used only for type hints. Never runs.
+  the fog         files you have not seen yet.
+  scout           send scouts over a district: you learn the NAMES of its
+                  files, nothing else.
+  spyglass        'look <m>': read a file you can see without moving.
+  probe           ask how two files are related: import edges between
+                  them plus commits that touched both.
+  trace           dry-run a chain of imports - free, no attempt spent.
+  who             list every file that imports one.
+  chronicle       one file's commit history, from git.
+  blast radius    everything that (transitively) imports a file - what
+                  could break when it changes.
+  ghost edge      two files with NO import between them that git shows
+                  changing together constantly - hidden coupling.
+  boss            the repo's center of gravity: highest churn x
+                  centrality. Its quests are the endgame.
+  bedrock/gate/   roles from metrics: bedrock = stable + widely imported;
+  swamp           gate = a chokepoint on many paths; swamp = many authors
+                  and heavy rework.
+  streak          consecutive clean solves: +5% XP each, halves on a miss.
+  scout's         a one-liner written by an AI, clearly marked, worth
+  impression      0 XP - flavor, never ground truth.
+
+(back to the moves: help)"""

@@ -45,6 +45,17 @@ def export_brief(world: World, per_zone: int = 2) -> dict:
                        "including the answer], lesson: one-line transferable "
                        "takeaway, hint: one-line nudge that helps without "
                        "revealing}"),
+            "voice": (
+                "Write in the game's voice: the repo is a hive, districts "
+                "are chambers, modules are residents, git history is the "
+                "chronicle, long-lived modules are elders, the player is a "
+                "scout bee. Open each prompt with one flavorful beat, then "
+                "ask the concrete question plainly - flavor must never "
+                "blur the technical claim. Register examples from the "
+                "game's own quests: 'A page from the hive's chronicle, "
+                "2024-01-09: ...' / 'The old bees whisper that X has a "
+                "secret companion...' / 'Storm damage survey. One building "
+                "in this district has been rebuilt far more often...'"),
             "rules": [
                 "each question asks WHERE a specific behavior, mechanism, or "
                 "responsibility lives - answerable by pointing at ONE module",
@@ -56,6 +67,8 @@ def export_brief(world: World, per_zone: int = 2) -> dict:
                 "not random names",
                 "prefer questions whose answer surprises someone who only "
                 "read the import graph",
+                "lessons are ONE short sentence (under ~20 words) naming "
+                "the function or class as evidence - not a paragraph",
             ],
         },
     }
@@ -95,7 +108,7 @@ def apply_authored(world: World, items: list[dict]) -> dict:
             prompt=(f"{prompt.rstrip('.') }. Suspects: "
                     f"{', '.join(sorted(suspects))}. Read the code - the "
                     f"map alone cannot answer this. Point: "
-                    f"answer point <module>."),
+                    f"answer <module>."),
             truth={"module": ans, "suspects": sorted(suspects),
                    "hint": it.get("hint", ""), "why": it.get("lesson", "")},
             xp=30, distance=len(suspects),

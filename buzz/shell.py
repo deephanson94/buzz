@@ -12,24 +12,28 @@ from .ui import paint
 COMMANDS = [
     "map", "look", "edges", "go", "quests", "quest", "scout", "answer",
     "hint", "probe", "trace", "chronicle", "who", "notes", "atlas",
-    "recap", "standings", "rescout", "status", "help", "quit",
+    "recap", "standings", "rescout", "status", "words", "help", "quit",
 ]
 VERBS = ["walk", "edge", "region", "place", "point", "order"]
 
 SHORT_HELP = """the moves (tab completes everything; no 'buzz' prefix needed):
-  map / look [m] / go <m>      see the map, read a module, move
-  quests / quest <id>          the district's quests, one quest in full
-  answer <id> <verb> ...       submit - the ONLY source of XP
-  hint <id>                    oracle ladder (costs XP, 3rd reveals)
-  scout <zone>                 reveal a district's module names
-  probe <a> <b>  trace <m..>   evidence: relations, chain dry-runs
-  who <m> / chronicle <m>      importers; git history of a module
-  edges [zone]                 a district's import edges, tallied
-  notes                        the lessons you have banked so far, one line each
-  atlas / recap / standings    visual map file / field notes / leaderboard
-  status / rescout             progress; check whether the repo moved
+  map / look [m] / go <m>      the map; read one file; move to it
+  quests / quest <id>          this district's challenges; read one in full
+  answer <id> <answer...>      submit an answer - the ONLY source of XP
+  hint <id>                    3 levels of help (costs XP; 3rd gives it away)
+  scout <district>             reveal which files a district holds (z1, z2...)
+  probe <a> <b>                how are two files related? imports + shared commits
+  trace <m1> <m2> ...          test a chain of imports BEFORE you answer
+  who <m>                      which files import this one
+  chronicle <m>                this file's commit history
+  edges [district]             every import inside a district, counted up
+  notes                        the lessons you have learned so far
+  atlas / recap / standings    visual HTML map / your field notes / leaderboard
+  status / rescout             your progress / check whether the repo changed
+  words                        the game's vocabulary in plain language
   quit                         leave (progress saves after every move)
-module names: any unique tail works - 'backend' finds transports.trunkline.backend
+names are forgiving: any unique tail works ('backend' finds
+transports.trunkline.backend). Confused by a term? try: words
 """
 
 
@@ -116,6 +120,8 @@ def run_shell(world: World, s: Session, save) -> None:
             from .cli import _try_next
             print(_try_next(world, s))
             continue
+        if parts[0] == "buzz" and len(parts) > 1:
+            parts = parts[1:]  # 'buzz look' inside the shell means 'look'
         cmd, rest = parts[0], parts[1:]
         if cmd in ("quit", "exit", "q"):
             break

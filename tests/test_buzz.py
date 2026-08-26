@@ -706,3 +706,58 @@ def test_order_red_herring_on_second_instance():
     assert q.truth.get("herring") == ["a", "c"]
     # and the naive order (counting the fake edge) violates a real pair
     assert ("c", "a") in {tuple(p) for p in q.truth["pairs"]}
+
+def test_lore_parse_tolerates_fences():
+    from buzz.lore import _parse
+    obj = {"quests": [], "zone_briefs": {"z1": "x"}, "glosses": {}}
+    import json as _j
+    fenced = "Here you go:\n```json\n" + _j.dumps(obj) + "\n```\nDone."
+    assert _parse(fenced) == obj
+    assert _parse(_j.dumps(obj)) == obj
+    with pytest.raises(ValueError):
+        _parse("no json here at all")
+
+
+def test_run_lore_via_custom_cmd(world, tmp_path, monkeypatch):
+    import json as _j
+    from buzz.lore import run_lore
+    z = next(iter(world.zones))
+    mods = sorted(world.zones[z].members)
+    if len(mods) < 4:
+        pytest.skip("zone too small")
+    nodoc = next((m for m in world.modules if not world.modules[m].doc), None)
+    resp = {
+        "quests": [{"zone": z,
+                    "prompt": "Which module in this district owns the shared "
+                              "primitives everything else builds on, judging "
+                              "by its class definitions and imports?",
+                    "answer": mods[0], "suspects": mods[:4],
+                    "lesson": "primitives sit at the bottom", "hint": "h"}],
+        "zone_briefs": {z: "the foundation cluster", "zzz": "ignored"},
+        "glosses": ({nodoc: "does a thing"} if nodoc else {}),
+    }
+    stub = tmp_path / "stub.py"
+    stub.write_text("import sys, json\nsys.stdin.read()\n"
+                    f"print(json.dumps({resp!r}))")
+    monkeypatch.setenv("BUZZ_LORE_CMD", f"python {stub}")
+    r = run_lore(world)
+    assert len(r["added"]) == 1 and r["zone_briefs"] == 1
+    assert world.zones[z].brief == "the foundation cluster"
+    if nodoc:
+        assert world.modules[nodoc].gloss == "does a thing"
+    qid = r["added"][0]
+    s = engine.new_session(world)
+    res = engine.answer(world, s, qid, "point", [mods[0]])
+    assert res["correct"]
+
+
+def test_model_roundtrip_with_lore_fields(tmp_path):
+    from buzz.model import World, Module, Zone
+    w = World(repo="x", sha="y")
+    w.modules["a"] = Module(name="a", path="a", zone="z1", gloss="impression")
+    w.zones["z1"] = Zone(id="z1", name="Z", members=["a"], brief="a brief")
+    p = tmp_path / "w.json"
+    w.save(p)
+    w2 = World.load(p)
+    assert w2.modules["a"].gloss == "impression"
+    assert w2.zones["z1"].brief == "a brief"

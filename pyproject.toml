@@ -13,6 +13,7 @@ dependencies = ["networkx>=3.0", "scipy>=1.10"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
+lore = ["anthropic>=1.0"]
 
 [project.scripts]
 buzz = "buzz.cli:main"
