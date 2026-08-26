@@ -7,7 +7,12 @@ name = "buzz-game"
 version = "0.1.0"
 description = "Buzz: a fog-of-war game that teaches how a repo works"
 requires-python = ">=3.10"
-dependencies = ["networkx>=3.0"]
+# scipy (which brings numpy) is required at runtime: networkx's pagerank
+# defaults to its scipy implementation and crashes without it
+dependencies = ["networkx>=3.0", "scipy>=1.10"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
 
 [project.scripts]
 buzz = "buzz.cli:main"

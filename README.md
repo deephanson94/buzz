@@ -77,6 +77,6 @@ See `docs/DESIGN_V1.md` for the full design. v1 deviations from it:
 ## Development
 
 ```bash
-pip install -e . pytest
+pip install -e ".[dev]"
 python -m pytest tests/
 ```
