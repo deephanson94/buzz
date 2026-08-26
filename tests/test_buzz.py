@@ -820,6 +820,60 @@ def test_overworld_layout_pure(world):
     assert len({v for v in tiles.values()}) == len(tiles)
 
 
+def test_wanted_daily(world):
+    from buzz import wanted
+    s = engine.new_session(world)
+    date, target = wanted.pick(world, "2026-08-26")
+    d2, t2 = wanted.pick(world, "2026-08-26")
+    assert (date, target) == (d2, t2)          # deterministic
+    assert target in world.modules
+    # the poster never names the fugitive
+    assert all(target not in ln for ln in wanted.poster(world, target))
+    xp0 = s.xp
+    # a typo spends no guess
+    out = wanted.play(world, s, "no.such.module")
+    assert "free" in out[0] and not s.wanted.get("guesses")
+    # wrong real guess: costs a guess, sharpens the poster, no XP change
+    wrong = next(n for n in sorted(world.modules) if n != target)
+    out = wanted.play(world, s, wrong)
+    assert len(s.wanted["guesses"]) == 1 and s.xp == xp0
+    # correct guess pays the bounty exactly once
+    out = wanted.play(world, s, target)
+    assert s.wanted["won"] and s.xp == xp0 + wanted.BOUNTY
+    out = wanted.play(world, s, target)
+    assert "already" in out[0] and s.xp == xp0 + wanted.BOUNTY
+    # roundtrip: the wanted dict survives save/load
+    import json as _json
+    from dataclasses import asdict
+    from buzz.model import Session
+    s2 = Session(**_json.loads(_json.dumps(asdict(s))))
+    assert s2.wanted["won"]
+
+
+def test_wanted_exhaust_reveals_costs_nothing(world):
+    from buzz import wanted
+    s = engine.new_session(world)
+    _, target = wanted.pick(world)
+    xp0 = s.xp
+    wrongs = [n for n in sorted(world.modules) if n != target]
+    for g in wrongs[: wanted.MAX_GUESSES]:
+        out = wanted.play(world, s, g)
+    assert s.wanted["done"] and not s.wanted["won"]
+    assert target in out[-1]                   # revealed on the cold trail
+    assert s.xp == xp0                         # nothing lost (rule 12)
+
+
+def test_export_pack(world, tmp_path):
+    from buzz.export import export
+    s = engine.new_session(world)
+    out, files = export(world, s, tmp_path)
+    assert (out / "index.md").exists()
+    assert (out / "atlas.html").exists()
+    assert (out / "field_notes.md").exists()
+    idx = (out / "index.md").read_text()
+    assert "atlas.html" in idx and "field_notes.md" in idx
+    assert world.sha[:10] in idx
+
 def test_exam_flow(world):
     from buzz import exam
     s = engine.new_session(world)

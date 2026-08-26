@@ -23,9 +23,18 @@ def render_recap(world: World, s: Session) -> str:
         "",
     ]
     # the repo's own one-liner, when its root package was read
-    root = min(world.modules.values(), key=lambda m: len(m.name))
+    # the root package is the SHALLOWEST __init__.py, not the shortest
+    # name - 'cli' outscored 'waggle' and put the CLI's docstring under
+    # the repo's headline (caught by the wave-3 export audit)
+    root = min(world.modules.values(),
+               key=lambda m: (m.path.count("/")
+                              if m.path.endswith("__init__.py") else 99,
+                              len(m.name)))
     if root.name in disc and root.doc:
-        lines += [f"{name}: {root.doc}", ""]
+        doc = root.doc
+        if doc.lower().startswith(name.lower() + ":"):
+            doc = doc[len(name) + 1:].strip()  # no 'waggle: waggle: ...'
+        lines += [f"{name}: {doc}", ""]
     # one line per district actually reached - built from the docstrings and
     # roles this run surfaced, so a newcomer gets the shape, not a quest log
     for z in sorted(world.zones.values(), key=lambda z: z.order):
@@ -71,13 +80,22 @@ def render_recap(world: World, s: Session) -> str:
         lines += [f"- {l}" for l in seen_lessons]
     boss = next((m for m, mod in world.modules.items()
                  if mod.role == "boss"), None)
+    care = []
     if boss:
         b = world.modules[boss]
-        lines += ["", "## Handle with care", "",
-                  f"- {boss}: this repo's center of gravity "
-                  f"({b.commits} commits, {b.authors} authors, "
-                  f"{b.in_degree} direct importers). Review changes to it "
-                  f"hardest."]
+        care.append(f"- {boss}: this repo's center of gravity "
+                    f"({b.commits} commits, {b.authors} authors, "
+                    f"{b.in_degree} direct importers). Review changes to "
+                    f"it hardest.")
+    # every other surveyed hotspot the run already knows about - a real
+    # handover names all the stoves that are hot, not just the hottest
+    hot = sorted((m for m in seen if m != boss
+                  and world.modules[m].commits >= 10),
+                 key=lambda m: -world.modules[m].commits)[:5]
+    care += [f"- {m}: high churn ({world.modules[m].commits} commits, "
+             f"{world.modules[m].authors} author(s))" for m in hot]
+    if care:
+        lines += ["", "## Handle with care", ""] + care
     directory = [m for m in sorted(world.modules) if m in seen]
     if directory:
         lines += ["", "## Directory of everything surveyed", ""]

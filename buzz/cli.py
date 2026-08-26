@@ -566,6 +566,17 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
             raise GameError("usage: buzz hint <id>")
         lvl, text = engine.hint(world, s, rest[0])
         print(f"oracle hint {lvl}: {text}")
+    elif cmd == "wanted":
+        from .wanted import play as wanted_play
+        for line in wanted_play(world, s, rest[0] if rest else None):
+            print(line)
+    elif cmd == "export":
+        from .export import export as export_pack
+        out, files = export_pack(world, s, Path("."))
+        print(f"onboarding pack written to {out.resolve()}:")
+        for f in files:
+            print(f"  {f.split(' - ')[0]}")
+        print("hand the directory to the next scout - or read index.md")
     elif cmd == "status":
         print(render.render_status(world, s))
     elif cmd in ("words", "glossary", "jargon"):

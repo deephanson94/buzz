@@ -156,6 +156,7 @@ class Session:
     boss_open: bool = False
     victory: bool = False
     log: list[str] = field(default_factory=list)
+    wanted: dict = field(default_factory=dict)   # daily mystery: date/guesses/done/won
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

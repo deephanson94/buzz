@@ -12,7 +12,8 @@ from .ui import paint
 COMMANDS = [
     "map", "look", "edges", "go", "quests", "quest", "scout", "answer",
     "hint", "probe", "trace", "chronicle", "who", "flow", "notes", "atlas",
-    "recap", "standings", "rescout", "status", "words", "tui", "exam", "badges", "help", "quit",
+    "recap", "standings", "rescout", "status", "words", "wanted",
+    "export", "exam", "badges", "tui", "help", "quit",
 ]
 VERBS = ["walk", "edge", "region", "place", "point", "order"]
 
@@ -30,6 +31,8 @@ SHORT_HELP = """the moves (tab completes everything; no 'buzz' prefix needed):
   notes                        the lessons you have learned so far\n  exam                         recall run: re-answer solved quests from\n                               memory - retention is the score\n  badges                       the titles this run has earned
   atlas / recap / standings    visual HTML map / your field notes / leaderboard
   status / rescout             your progress / check whether the repo changed
+  wanted [guess]               today's mystery module - 3 guesses, small bounty
+  export                       bundle atlas + notes into an onboarding pack
   words                        the game's vocabulary in plain language\n  tui                          the OVERWORLD: walk the map with arrow keys
   quit                         leave (progress saves after every move)
 names are forgiving: any unique tail works ('backend' finds
