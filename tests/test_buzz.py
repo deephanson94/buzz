@@ -130,7 +130,10 @@ def test_hint_level3_reveals(world):
     engine.hint(world, s, q.id)
     engine.hint(world, s, q.id)
     lvl, text = engine.hint(world, s, q.id)
-    assert lvl == 3 and s.resolved[q.id] == "revealed" and s.xp == 0
+    # the oracle tells all but the player still closes the quest themselves
+    assert lvl == 3 and q.id not in s.resolved and "closing move" in text
+    r = engine.answer(world, s, q.id, "walk", q.truth["example"])
+    assert r["correct"] and r["gained"] == 0 and s.resolved[q.id] == "correct"
 
 
 def test_movement_rules(world):

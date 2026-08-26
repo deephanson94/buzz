@@ -71,10 +71,21 @@ def gen_walk(world: World, G: nx.DiGraph, zone_id: str, count: int = 2,
             continue
         example = nx.shortest_path(G, a, b)
         # a repo-wide registry spine (X -> config -> pkg -> registry -> Y)
-        # would otherwise stamp out near-identical walks with new endpoints
-        via = _sig("walkvia", tuple(example[1:-1]))
+        # would otherwise stamp out near-identical walks with new endpoints:
+        # dedup identical interiors AND allow at most ONE mostly-funnel walk
+        # per world (playtesters called the rest recycled)
+        interior = example[1:-1]
+        via = _sig("walkvia", tuple(interior))
         if len(example) > 2 and via in used:
             continue
+        max_btw = max((m.betweenness for m in world.modules.values()),
+                      default=0) or 1
+        funnel = {n for n, m in world.modules.items()
+                  if m.betweenness >= 0.1 * max_btw}
+        if interior and sum(1 for n in interior if n in funnel) / len(interior) > 0.5:
+            if _sig("walk-funnel-used") in used:
+                continue
+            used.add(_sig("walk-funnel-used"))
         used.add(_sig("walk", a, b))
         used.add(via)
         taken.update((a, b))

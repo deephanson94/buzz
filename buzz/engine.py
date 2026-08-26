@@ -13,7 +13,7 @@ from .questions import make_followup
 
 TUNNEL = "tunnel-vision"
 BOSS_ZONES_NEEDED = 2
-HINT_COST = {1: 0.2, 2: 0.5}   # fraction of question XP forfeited
+HINT_COST = {1: 0.2, 2: 0.5, 3: 1.0}   # fraction of question XP forfeited
 
 
 class GameError(Exception):
@@ -355,6 +355,12 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
     if q.verb == "walk":
         path = [resolve_module(world, a) for a in args]
         correct, note = _check_walk(world, s, q, path)
+        if not correct and "sealed tunnel - unlock" in note:
+            # their code-reading was right; only the unlock mechanic was
+            # unknown. Free do-over, not a penalized retry.
+            return {"q": q, "correct": False, "partial": False, "retry": True,
+                    "gained": 0, "followup": None, "explain": "",
+                    "note": note + " (this attempt is free)"}
         if correct:
             pass
         elif s.tries.get(q.id, 0) < MAX_RETRIES:
@@ -566,7 +572,7 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
     t = q.truth
     if level == 1:
         if q.qtype in ("walk", "cycle", "detour"):
-            text = f"the shortest chain has {len(t['example']) - 1} hops"
+            text = f"one known chain has {len(t['example']) - 1} hops (shorter ones may exist)"
         elif q.qtype == "region":
             text = f"the blast radius contains {len(t['region'])} modules"
         elif q.qtype == "ghost":
@@ -632,17 +638,16 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
             text = f"{t['src']} is the importer"
         s.hints[q.id] = 2
         return 2, text + "  (XP for this quest now -50%)"
-    # level 3: reveal, resolve for 0 XP, no followup (the oracle already taught it)
+    # level 3: the oracle tells all, but YOU still close the quest - submit
+    # the answer with buzz answer (0 XP at this hint level; streak resets)
     s.hints[q.id] = 3
-    s.resolved[q.id] = "revealed"
-    s.max_xp += q.xp
     s.streak = 0
     text = _explain(world, q)
     for m in _modules_in_truth(q):
         if m in world.modules and m not in s.seen:
             s.seen.append(m)
-    _post_answer(world, s, q)
-    return 3, "the oracle reveals everything: " + text
+    return 3, ("the oracle reveals everything: " + text
+               + "  (now submit it with buzz answer - the closing move is yours)")
 
 
 def _ghost_candidates(world: World, t: dict) -> list[str]:

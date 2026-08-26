@@ -77,6 +77,9 @@ you understand how the code fits together. XP comes ONLY from quests -
 exploring is free and safe. Wrong answers reveal the truth and never
 subtract XP, but clean first-try solves build a streak bonus.
 
+Module addressing: names drop the package prefix (peft/config.py is just
+'config'); files in subpackages keep their dots (tuners.lora.config).
+
 You wake up at {world.start} - the module with the widest view of the hive.
 """)
     print(render.render_map(world, s))

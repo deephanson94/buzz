@@ -160,7 +160,9 @@ def render_quests(world: World, s: Session, zone_id: str) -> str:
     fus = [q for q in s.followups.values() if q["zone"] == zone_id]
     nb = [q for q in qs if not q.boss]
     done = sum(1 for q in nb if q.id in s.resolved)
+    n_boss = len(qs) - len(nb)
     lines = [f"quests in {z.name} ({z.id}) - {done}/{len(nb)} resolved"
+             + (f" (+{n_boss} boss quest(s) listed below)" if n_boss else "")
              + (" *CLEARED*" if zone_id in s.cleared else "") + ":"]
     for q in sorted(qs, key=lambda q: (q.boss, q.id)):
         lock = ""
@@ -201,10 +203,14 @@ def render_status(world: World, s: Session) -> str:
     solved = sum(1 for v in s.resolved.values() if v == "correct")
     total_xp = sum(q.xp for q in world.questions.values())
     attempted = len(s.resolved)
+    clean = sum(1 for qid, v in s.resolved.items()
+                if v == "correct" and not s.hints.get(qid)
+                and not s.tries.get(qid))
     lines = [
         f"XP {s.xp} (base pool {total_xp}; streak bonuses stack on top) "
         f"| rank: {rank(world, s)} (rank only ever climbs)"
-        + (f" | solved clean: {solved}/{attempted} attempted"
+        + (f" | solved: {solved}/{attempted} attempted"
+           f" ({clean} clean - no hints, no retries)"
            if attempted else ""),
         f"coverage: {d}/{total} modules discovered",
         f"zones cleared: {len(s.cleared)}/"
