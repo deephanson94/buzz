@@ -282,9 +282,14 @@ def gen_ghost(world: World, zone_id: str, boss: bool = False,
             continue
         partners = [(o, n) for o, n in world.cochange.get(x, []) if n >= 12
                     and not world.has_edge(x, o) and not world.has_edge(o, x)]
+        # the same hidden coupling must never be asked twice from opposite
+        # sides (a panel found the boss fight re-asked as a zone quest)
+        partners = [(o, n) for o, n in partners
+                    if _sig("ghostpair", *sorted((x, o))) not in used]
         if not partners:
             continue
         used.add(_sig("ghost", x))
+        used.add(_sig("ghostpair", *sorted((x, partners[0][0]))))
         accepted = [o for o, _ in partners[:3]]
         topn = partners[0][1]
         mult = BOSS_XP_MULT if boss else 1

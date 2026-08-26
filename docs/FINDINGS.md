@@ -1,4 +1,4 @@
-# Playtest program findings (v1, 10 rounds, 60+ agent sessions)
+# Playtest program findings (v1, 12 rounds, 78 playtest sessions)
 
 Method: panels of six Sonnet agents with fixed personas (methodical,
 speedrunner, junior dev, game critic, completionist, staff engineer) play a
@@ -20,11 +20,37 @@ applied between rounds. Passing bar: 8/10 on both.
 | 7 | peft, solver-calibrated | 6.33 | 8.00 |
 | 8 | + streaks, patch quests | 6.83 | 8.00 |
 | 9 | + wide generation (regression: gate funnel) | 6.00 | 7.67 |
-| 10 | + lore tier, all fixes | (in flight) | (in flight) |
+| 10 | + lore tier, all fixes | **7.17** | 8.00 |
+| 11 | + trace/chronicle, consistency fixes | 6.83 | 7.83 |
+| 12 | synthetic priors-free repo ("waggle") | 6.33 | 7.83* |
 
-**Learning met the bar** (8.00 across three separate rounds, both repos;
-every claim graph- or git-checkable). **Continue plateaued at 6-7** with
-round-to-round noise of about +/-0.4.
+*Round 12 produced the program's deepest individual verdicts (an 8/9 and
+the first 9-learning score) alongside its lowest (4-continue from the
+completionist, who full-cleared with zero mistakes).
+
+**Learning met the bar** (8.00 across four separate rounds, both repos;
+every claim graph-, git-, or source-checkable). **Continue peaked at 7.17
+(round 10) and plateaued in the 6-7.2 band** with round-to-round noise of
+about +/-0.4; individual 8-continue verdicts appeared in rounds 8, 10, 11
+and 12, but no panel averaged 8.
+
+## The three-factor difficulty model (the program's core result)
+
+Solver calibration across three repos shows question survivability - and
+play difficulty - is governed by:
+
+1. **Rater priors**: on famous public repos (rich, peft) the weak solver
+   answers 46-76% of questions from memory + one file.
+2. **Conventionality**: on a fictional repo no model has seen (waggle,
+   built for round 12 with designed teaching moments), the weak solver
+   STILL answered 69% - a strong model infers a cleanly-structured,
+   well-documented codebase from names and docstrings alone. Synthetic
+   repos are legible by design.
+3. **Messiness x unfamiliarity** is therefore where buzz discriminates:
+   real, accumulated, undocumented weirdness in codebases outside training
+   data - i.e. actual private repos, the product's target. A Sonnet panel
+   structurally cannot simulate that player experience: it defeats famous
+   repos by memory and clean repos by convention.
 
 ## What reliably delighted (panel best-moments, recurring)
 
@@ -72,9 +98,15 @@ round-to-round noise of about +/-0.4.
 
 ## Recommended next steps
 
-1. Playtest on a repo outside the raters' priors (private or post-cutoff)
-   - the single most informative unrun experiment.
-2. Control arm for the bar: pass = buzz beats plain-reading by 2+ points.
+1. **Human playtesting on a real private repo** - the panel instrument is
+   saturated; the remaining signal lives exactly where agents can't rate.
+2. The visual map layer (asked for in 6+ rounds): the fog-of-war metaphor
+   deserves a rendered graph, per the original design doc's v2 plan.
 3. Boss as a composite encounter (ghost + gate + walk chained on one
-   module) - requested in five separate rounds.
-4. Tier-2 (execution traces, mutation) when a repo's test suite runs.
+   module) - requested in six separate rounds.
+4. End-of-run consolidated recap of every earned lesson line as the run's
+   architecture summary (round 12 suggestion; cheap, high payoff).
+5. Lore authoring rule: answers must live in code bodies, never in a
+   docstring that states them (round 12: self-documenting repos leak).
+6. Control arm for the bar: pass = buzz beats plain-reading by 2+ points.
+7. Tier-2 (execution traces, mutation) when a repo's test suite runs.
