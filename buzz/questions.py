@@ -594,9 +594,15 @@ def generate_questions(world: World) -> None:
             gen_walk(world, Gtop, bz, count=1, boss=True,
                      src_pool=[boss], dst_pool=all_mods, used=used)
         gen_ghost(world, bz, boss=True, target=boss, used=used)
-        for q in world.questions.values():
-            if q.boss:
-                q.prompt = "[BOSS] " + q.prompt
+        # the boss is a staged encounter, not three tagged quests: each
+        # stage opens only after the previous one resolves (six rounds of
+        # playtesters asked for a climax that escalates)
+        boss_qs = [q for q in world.questions.values() if q.boss]
+        for i, q in enumerate(boss_qs, 1):
+            q.truth["stage"] = i
+            if i > 1:
+                q.truth["prev_stage"] = boss_qs[i - 2].id
+            q.prompt = (f"[BOSS - stage {i}/{len(boss_qs)}] " + q.prompt)
 
     # rotate the quest mix so districts play differently, and cap the
     # most repetition-prone types GLOBALLY - a recipe learned once should

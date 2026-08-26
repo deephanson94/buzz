@@ -224,6 +224,10 @@ def question_open(world: World, s: Session, q: Question) -> tuple[bool, str]:
         return False, "already resolved"
     if q.boss and not s.boss_open:
         return False, f"boss quests unlock after clearing {boss_needed(world)} zones"
+    prev = q.truth.get("prev_stage")
+    if q.boss and prev and prev not in s.resolved:
+        return False, (f"the boss reveals this stage only after {prev} "
+                       f"falls - fight in order")
     return True, ""
 
 

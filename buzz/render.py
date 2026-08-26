@@ -164,10 +164,12 @@ def render_quests(world: World, s: Session, zone_id: str) -> str:
     lines = [f"quests in {z.name} ({z.id}) - {done}/{len(nb)} resolved"
              + (f" (+{n_boss} boss quest(s) listed below)" if n_boss else "")
              + (" *CLEARED*" if zone_id in s.cleared else "") + ":"]
-    for q in sorted(qs, key=lambda q: (q.boss, q.id)):
+    for q in sorted(qs, key=lambda q: (q.boss, q.truth.get("stage", 0), q.id)):
         lock = ""
         if q.boss and not s.boss_open:
             lock = " [LOCKED: clear more zones]"
+        elif q.boss and q.truth.get("prev_stage") not in (None, *s.resolved):
+            lock = f" [stage {q.truth['stage']}: sealed until the prior stage falls]"
         lines.append(f"  {q.id} [{_status_of(s, q.id)}] ({q.qtype}, {q.xp} XP){lock}")
     for f in fus:
         lines.append(f"  {f['id']} [{_status_of(s, f['id'])}] (follow-up, {f['xp']} XP)")
@@ -285,6 +287,11 @@ exploring (free, no XP):
   buzz chronicle <module>      the module's focused commits and reverts
                                from git history
   buzz who <module>            who imports it, across the whole hive
+  buzz atlas                   render the hive as a visual map (HTML file
+                               with real fog-of-war - open in a browser)
+  buzz recap                   compile everything this run taught into
+                               field notes (your keepable architecture
+                               summary of the repo)
   buzz scout <zone>            reveal a district's module NAMES (not edges)
   buzz quests all              one-line progress for every district
 

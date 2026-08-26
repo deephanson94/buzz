@@ -258,6 +258,18 @@ def main(argv: list[str] | None = None) -> None:
                 print("\n" + render.render_status(world, s))
             else:
                 print("\n" + _try_next(world, s))
+        elif cmd == "atlas":
+            from .atlas import write_atlas
+            p = write_atlas(world, s, game_dir() / "atlas.html")
+            print(f"atlas rendered: {p.resolve()}")
+            print("open it in a browser; regenerate after moving")
+        elif cmd == "recap":
+            from .recap import render_recap
+            text = render_recap(world, s)
+            p = game_dir() / "field_notes.md"
+            p.write_text(text)
+            print(text)
+            print(f"\n(saved to {p.resolve()})")
         elif cmd == "trace":
             if len(rest) < 2:
                 raise GameError("usage: buzz trace <module> <module> [module ...]")
