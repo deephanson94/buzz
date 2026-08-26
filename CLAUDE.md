@@ -32,6 +32,15 @@ mkdir game && cd game && buzz analyze <repo> [--lore] && buzz play
   `main` via pull request. Do not push feature work directly to `main`.
 - CI (pytest matrix + clean-install smoke) runs on pushes to `main`,
   `claude/**`, `feature/**`, and on all PRs. Green CI before merging.
+- **If CI seems stuck** (2026-08-26 incident playbook): GitHub Actions can
+  drop push webhooks (a push produces NO runs) or strand runs in a
+  created-but-never-dispatched limbo ("queued" forever; even the cancel
+  API 409s with "has not been queued yet"). Neither is this repo's fault -
+  do not debug the YAML. Fix: trigger manually, `ci.yml` has
+  `workflow_dispatch` exactly for this (`gh workflow run ci.yml
+  --ref <branch>`, or the GitHub MCP `actions_run_trigger` with method
+  `run_workflow`). Orphaned zombie runs on superseded commits are
+  cosmetic; ignore them.
 
 ## Rules that are load-bearing
 

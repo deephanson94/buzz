@@ -161,6 +161,15 @@ def main(argv: list[str] | None = None) -> None:
         s = load_session(world)
         _enter_shell(world, s)
         return
+    if cmd in ("tui", "overworld"):
+        world = load_world()
+        s = load_session(world)
+        from .overworld import run_overworld
+        try:
+            run_overworld(world, s, lambda sess: sess.save(session_path()))
+        except GameError as e:
+            raise SystemExit(f"! {e}")
+        return
     if cmd == "calibrate":
         from . import calibrate
         world = load_world()

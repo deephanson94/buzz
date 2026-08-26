@@ -12,7 +12,7 @@ from .ui import paint
 COMMANDS = [
     "map", "look", "edges", "go", "quests", "quest", "scout", "answer",
     "hint", "probe", "trace", "chronicle", "who", "flow", "notes", "atlas",
-    "recap", "standings", "rescout", "status", "words", "help", "quit",
+    "recap", "standings", "rescout", "status", "words", "tui", "help", "quit",
 ]
 VERBS = ["walk", "edge", "region", "place", "point", "order"]
 
@@ -30,7 +30,7 @@ SHORT_HELP = """the moves (tab completes everything; no 'buzz' prefix needed):
   notes                        the lessons you have learned so far
   atlas / recap / standings    visual HTML map / your field notes / leaderboard
   status / rescout             your progress / check whether the repo changed
-  words                        the game's vocabulary in plain language
+  words                        the game's vocabulary in plain language\n  tui                          the OVERWORLD: walk the map with arrow keys
   quit                         leave (progress saves after every move)
 names are forgiving: any unique tail works ('backend' finds
 transports.trunkline.backend). Confused by a term? try: words
@@ -127,6 +127,17 @@ def run_shell(world: World, s: Session, save) -> None:
             break
         if cmd in ("help", "?"):
             print(SHORT_HELP)
+            continue
+        if cmd in ("tui", "overworld"):
+            try:
+                from .overworld import run_overworld
+                run_overworld(world, s, save)
+                print(paint("(back from the overworld - the shell "
+                            "continues)", "dim"))
+            except GameError as e:
+                print(paint(f"! {e}", "red"))
+            except Exception as e:
+                print(paint(f"! overworld error: {e}", "red"))
             continue
         if cmd in ("analyze", "play", "calibrate", "author", "check"):
             print("! that's a setup command - run it outside the shell "
