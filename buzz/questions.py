@@ -605,17 +605,19 @@ def gen_cut(world: World, G: nx.DiGraph, zone_id: str,
         return 0
     low_n = sized[0][0]
     lows = [m for n, m in sized if n == low_n][:2]  # ties are both right
-    bigger = [m for n, m in sized if n >= low_n + 2][-3:]
+    bigger = [m for n, m in sized if n >= low_n + 2][-4:]
     if len(bigger) < 3:
         return 0
     cands = sorted(lows + bigger)
     sizes = {m: n for n, m in sized if m in cands}
     used.add(_sig("cut", zone_id))
+    tie = (" (Candidates may tie for fewest - any pick at the minimum "
+           "counts.)" if len(lows) > 1 else "")
     _q(world, zone_id, "cut", "point",
        f"The demolition order. Budget cuts: exactly one of these modules "
        f"will be deleted outright - {', '.join(cands)}. Every module that "
        f"transitively imports the victim (top-level chains) is stranded "
-       f"with it. Which deletion strands the FEWEST other modules? "
+       f"with it. Which deletion strands the FEWEST other modules?{tie} "
        f"{EDGE_RULE} Point at the safe demolition: answer point <module>.",
        {"module": lows[0], "accepted": lows, "candidates": cands,
         "sizes": sizes},
@@ -648,6 +650,31 @@ def gen_refactor(world: World, G: nx.DiGraph, zone_id: str,
         (n_win, winner), (n_lose, loser) = outcome[0], outcome[-1]
         if n_lose - n_win < 2:
             continue  # both cuts land alike - no real decision to teach
+        # the SECOND refactor in a world changes shape (a panel solved the
+        # repeat by rote): a three-way council where every cut helps, just
+        # unevenly - comparison of magnitudes, not spot-the-decoy
+        second = any(q.qtype == "refactor" for q in world.questions.values())
+        distinct = []
+        for n, a in outcome:
+            if not distinct or n > distinct[-1][0]:
+                distinct.append((n, a))
+        if second and len(distinct) >= 3:
+            (n1, w1), (n2, w2), (n3, w3) = distinct[0], distinct[1], distinct[2]
+            used.add(_sig("refactor", zone_id))
+            _q(world, zone_id, "refactor", "edge",
+               f"The refactor council reconvenes - three proposals this "
+               f"time. {w1}, {w2} and {w3} each import {x} top-level, and "
+               f"each owner proposes severing THEIR import to shrink {x}'s "
+               f"blast radius (today: {base} modules reach {x} through "
+               f"always-run chains). All three cuts change something - but "
+               f"not equally. Which single severed import shrinks the "
+               f"radius MOST? {EDGE_RULE} Answer with that edge: "
+               f"answer edge <importer> {x}.",
+               {"src": w1, "dst": x, "loser": w3, "base": base,
+                "n_win": n1, "n_lose": n3,
+                "others": [[w2, n2], [w3, n3]]},
+               xp=35, distance=3)
+            return 1
         used.add(_sig("refactor", zone_id))
         _q(world, zone_id, "refactor", "edge",
            f"The refactor council. {x} is imported top-level by both "
@@ -688,6 +715,11 @@ def gen_via(world: World, G: nx.DiGraph, zone_id: str,
                 if _sig("walk", src, dst) in used or \
                         _sig("via", src, via, dst) in used:
                     continue
+                # the waypoint must force a real reroute: if every natural
+                # (shortest) route already passes through it, the
+                # constraint is a checkbox, not a decision
+                if via in nx.shortest_path(G, src, dst):
+                    continue
                 example = (nx.shortest_path(G, src, via)
                            + nx.shortest_path(G, via, dst)[1:])
                 used.add(_sig("via", zone_id))
@@ -718,34 +750,40 @@ def gen_order(world: World, G: nx.DiGraph, zone_id: str,
     if len(members) > 10:
         members = sorted(members,
                          key=lambda m: -world.modules[m].pagerank)[:10]
-    for combo in combinations(sorted(members), 4):
-        pairs = []
-        mutual = False
-        for u in combo:
-            for v in combo:
-                if u == v:
-                    continue
-                if nx.has_path(G, u, v):
-                    if nx.has_path(G, v, u):
-                        mutual = True
-                    pairs.append((u, v))  # u (transitively) imports v
-        if mutual or not 3 <= len(pairs) <= 8:
-            continue  # unconstrained is a coin toss; a full chain is rote
-        H = nx.DiGraph()
-        H.add_nodes_from(combo)
-        H.add_edges_from((v, u) for u, v in pairs)  # dependency first
-        example = list(nx.topological_sort(H))
-        used.add(_sig("order", zone_id))
-        _q(world, zone_id, "order", "order",
-           f"The migration plan. These four modules are being rewritten: "
-           f"{', '.join(combo)}. Rule: a module may only be rewritten "
-           f"AFTER everything it imports (directly or through top-level "
-           f"chains) is already done. Give any valid order, dependencies "
-           f"first: answer order <first> <second> <third> <fourth>.",
-           {"set": sorted(combo), "pairs": [[u, v] for u, v in pairs],
-            "example": example},
-           xp=30, distance=4)
-        return 1
+    # prefer 5-module instances (harder to eyeball off one edges dump);
+    # fall back to 4. A full chain on k nodes has k*(k-1)/2 transitive
+    # pairs and exactly ONE valid order - copy-the-arrows, no decision -
+    # so the pair count is capped strictly below that.
+    for k, lo, hi in ((5, 4, 8), (4, 3, 5)):
+        for combo in combinations(sorted(members), k):
+            pairs = []
+            mutual = False
+            for u in combo:
+                for v in combo:
+                    if u == v:
+                        continue
+                    if nx.has_path(G, u, v):
+                        if nx.has_path(G, v, u):
+                            mutual = True
+                        pairs.append((u, v))  # u (transitively) imports v
+            if mutual or not lo <= len(pairs) <= hi:
+                continue
+            H = nx.DiGraph()
+            H.add_nodes_from(combo)
+            H.add_edges_from((v, u) for u, v in pairs)  # dependency first
+            example = list(nx.topological_sort(H))
+            used.add(_sig("order", zone_id))
+            _q(world, zone_id, "order", "order",
+               f"The migration plan. These {k} modules are being "
+               f"rewritten: {', '.join(combo)}. Rule: a module may only "
+               f"be rewritten AFTER everything it imports (directly or "
+               f"through top-level chains) is already done. Several valid "
+               f"orders exist - give ANY one, dependencies first: "
+               f"answer order {' '.join('<' + str(i + 1) + '>' for i in range(k))}.",
+               {"set": sorted(combo), "pairs": [[u, v] for u, v in pairs],
+                "example": example},
+               xp=30, distance=k)
+            return 1
     return 0
 
 
@@ -799,6 +837,13 @@ def generate_questions(world: World) -> None:
     def capped(qt: str) -> bool:
         return count(qt) >= CAPS.get(qt, 99)
 
+    # non-boss walks are budgeted per WORLD, not per zone: three panels
+    # running found a walk (and often two) in literally every district
+    WALK_BUDGET = 6
+
+    def walk_left(want: int) -> int:
+        return max(0, min(want, WALK_BUDGET - count("walk")))
+
     for z in sorted(world.zones.values(), key=lambda z: z.order):
         n = 0
         if not capped("cycle"):  # carries the ability unlock, so tried first
@@ -811,13 +856,15 @@ def generate_questions(world: World) -> None:
                 n += gen_ghost(world, z.id, used=used)
             if not capped("patch"):
                 n += gen_patch(world, z.id, used=used)
-            n += gen_walk(world, Gtop, z.id, count=3, used=used)
+            if walk_left(3):
+                n += gen_walk(world, Gtop, z.id, count=walk_left(3), used=used)
             if not capped("region"):
                 n += gen_region(world, Gtop, z.id, used=used)
             if not capped("hub"):
                 n += gen_hub(world, Gtop, z.id, used=used)
         elif mix == 1:
-            n += gen_walk(world, Gtop, z.id, count=2, used=used)
+            if walk_left(2):
+                n += gen_walk(world, Gtop, z.id, count=walk_left(2), used=used)
             n += gen_detour(world, Gtop, z.id, used=used)
             if not capped("gate"):
                 n += gen_gate(world, Gtop, z.id, used=used)
@@ -841,7 +888,7 @@ def generate_questions(world: World) -> None:
                 n += gen_patch(world, z.id, used=used)
             if not capped("hub"):
                 n += gen_hub(world, Gtop, z.id, used=used)
-            if n < 3:
+            if n < 3 and walk_left(1):
                 n += gen_walk(world, Gtop, z.id, count=1, used=used)
         # the decision tier: later districts escalate to judgement calls
         # (safest deletion, best refactor, migration order, routed walks)
@@ -874,7 +921,8 @@ def generate_questions(world: World) -> None:
         if n < 4 and not capped("hotspot"):
             n += gen_hotspot(world, z.id, used=used)
         if n < 3:  # thin zone: top up so it stays clearable and worthwhile
-            n += gen_walk(world, Gtop, z.id, count=1, used=used)
+            if walk_left(1):
+                n += gen_walk(world, Gtop, z.id, count=1, used=used)
             if not capped("ghost"):
                 gen_ghost(world, z.id, used=used)
 

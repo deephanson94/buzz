@@ -273,6 +273,12 @@ def _explain(world: World, q: Question) -> str:
         return (f"{t['module']} is the safe demolition - the reverse "
                 f"reach of each candidate: {sizes}")
     if q.qtype == "refactor":
+        if t.get("others"):
+            rivals = "; ".join(f"cutting {a}'s leaves {n}"
+                               for a, n in t["others"])
+            return (f"severing {t['src']} -> {t['dst']} drops the radius "
+                    f"from {t['base']} to {t['n_win']} - the biggest win "
+                    f"({rivals})")
         return (f"severing {t['src']} -> {t['dst']} drops the radius from "
                 f"{t['base']} to {t['n_win']}; cutting {t['loser']}'s import "
                 f"leaves {t['n_lose']} - redundant routes keep carrying "
