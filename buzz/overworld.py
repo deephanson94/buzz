@@ -329,6 +329,15 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
                     break
             if not blocked:
                 bee[0], bee[1] = nx, ny
+                # the tall-grass encounter: WALKING onto a known tile is
+                # what whispers, not traveling (round W1: gating on a
+                # successful 'go' meant most walks stayed silent)
+                stepped = tile_at(bee[0], bee[1])
+                if stepped:
+                    whisper = _whisper(world, s, stepped)
+                    if whisper:
+                        msg = whisper
+                        save(s)
         elif k in (curses.KEY_ENTER, 10, 13) and here_m:
             try:
                 how = engine.go(world, s, here_m)
