@@ -258,6 +258,49 @@ def main(argv: list[str] | None = None) -> None:
                 print("\n" + render.render_status(world, s))
             else:
                 print("\n" + _try_next(world, s))
+        elif cmd == "standings":
+            rows = []
+            for p in sorted((game_dir() / "sessions").glob("*.json")):
+                try:
+                    other = Session.load(p)
+                except Exception:
+                    continue
+                solved = sum(1 for v in other.resolved.values() if v == "correct")
+                rows.append((other.xp, p.stem, engine.rank(world, other),
+                             solved, len(other.resolved),
+                             len(other.discovered), other.streak,
+                             other.victory))
+            rows.sort(reverse=True)
+            print("standings for this hive (all scouts, shared world):")
+            print(f"  {'scout':16} {'XP':>5}  {'rank':12} {'solved':>9} "
+                  f"{'visited':>8} {'streak':>7}")
+            for xp, name, rk, solved, att, disc, streak, vic in rows:
+                flag = " *CLEAR*" if vic else ""
+                print(f"  {name:16} {xp:>5}  {rk:12} {solved:>4}/{att:<4} "
+                      f"{disc:>8} {streak:>7}{flag}")
+        elif cmd == "rescout":
+            from .rescout import rescout as _rescout
+            target = Path(rest[0]) if rest else Path(world.repo)
+            r = _rescout(world, target)
+            if r.get("error"):
+                raise GameError(r["error"])
+            if not r.get("moved"):
+                print("the hive is exactly as you left it - nothing moved "
+                      f"since {world.sha[:10]}")
+            else:
+                world.save(game_dir() / "world.json")
+                print(f"the hive MOVED: {r['commits']} new commit(s) since "
+                      f"your pin (now re-pinned to {r['new_sha'][:10]})")
+                if r["zones"]:
+                    print("disturbed districts: " + ", ".join(r["zones"]))
+                top = list(r["disturbed"].items())[:6]
+                if top:
+                    print("most-shaken modules: "
+                          + ", ".join(f"{m} ({n})" for m, n in top))
+                if r["aftershocks"]:
+                    print(f"AFTERSHOCK quest(s) spawned: "
+                          f"{', '.join(r['aftershocks'])} - "
+                          f"'buzz quest <id>' to take them on")
         elif cmd == "atlas":
             from .atlas import write_atlas
             p = write_atlas(world, s, game_dir() / "atlas.html")

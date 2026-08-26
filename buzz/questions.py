@@ -625,13 +625,15 @@ def generate_questions(world: World) -> None:
             n += gen_cycle(world, Gtop, z.id, used=used)
         mix = z.order % 3
         if mix == 0:
-            n += gen_walk(world, Gtop, z.id, count=4, used=used)
-            if not capped("region"):
-                n += gen_region(world, Gtop, z.id, used=used)
+            # git-history quests lead: ghost and patch were the panels'
+            # best-moment winners in nearly every round
             if not capped("ghost"):
                 n += gen_ghost(world, z.id, used=used)
             if not capped("patch"):
                 n += gen_patch(world, z.id, used=used)
+            n += gen_walk(world, Gtop, z.id, count=3, used=used)
+            if not capped("region"):
+                n += gen_region(world, Gtop, z.id, used=used)
             if not capped("hub"):
                 n += gen_hub(world, Gtop, z.id, used=used)
         elif mix == 1:

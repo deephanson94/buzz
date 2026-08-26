@@ -97,7 +97,8 @@ def render_atlas(world: World, s: Session) -> str:
             fill = color if m in disc else "none"
             here = ' stroke-width="3.5"' if m == s.here else ""
             parts.append(
-                f'<circle cx="{cx}" cy="{cy}" r="{9 if mod.role == ROLE_BOSS else 7}" '
+                f'<circle class="node" data-m="{html.escape(m)}" '
+                f'cx="{cx}" cy="{cy}" r="{9 if mod.role == ROLE_BOSS else 7}" '
                 f'fill="{fill}" stroke="{color}"{here}>'
                 f'<title>{html.escape(m)} ({mod.role}, {mod.commits} commits)</title></circle>')
             label = m.split(".")[-1][:12]
@@ -107,6 +108,33 @@ def render_atlas(world: World, s: Session) -> str:
             if m == s.here:
                 parts.append(f'<text x="{cx}" y="{cy - 13}" class="you">YOU</text>')
 
+    # per-node dossier for the click panel - fog-respecting: discovered
+    # modules carry full detail, merely-seen ones only their name and zone
+    import json as _json
+    info = {}
+    for m in seen:
+        if m not in world.modules:
+            continue
+        mod = world.modules[m]
+        zname = world.zones[mod.zone].name
+        if m in disc:
+            outs = [f"{e.dst} [{e.kind}]" for e in world.out_edges(m)
+                    if e.kind != LAZY or tunnel]
+            sealed_n = sum(1 for e in world.out_edges(m)
+                           if e.kind == LAZY and not tunnel)
+            if sealed_n:
+                outs.append(f"+{sealed_n} sealed tunnel(s)")
+            info[m] = {"t": f"{m} — {mod.role}, {zname}",
+                       "d": mod.doc or mod.path,
+                       "s": (f"{mod.loc} lines · {mod.commits} commits · "
+                             f"{mod.authors} authors"
+                             + (f" · born {mod.born}" if mod.born else "")),
+                       "i": "imports: " + (", ".join(outs) or "nothing internal")}
+        else:
+            info[m] = {"t": f"{m} — seen, not yet visited", "d": zname,
+                       "s": "fly there (buzz go) or spyglass it (buzz look) "
+                            "for detail", "i": ""}
+    info_json = _json.dumps(info)
     name = world.repo.rsplit("/", 1)[-1]
     header = (f"THE HIVE · {html.escape(name)} · quests "
               f"{len(s.resolved)}/{len(world.questions)} · modules visited "
@@ -141,7 +169,39 @@ solid line = top-level import · orange dash = tunnel (unlocked) ·
 red stub = sealed tunnel · faint dots = types-only ·
 edges appear once you have read the importing file
 </div>
-<div class="legend">regenerate after moving: <b>buzz atlas</b></div>
+<div class="legend">click any visible node for its dossier · regenerate after
+moving: <b>buzz atlas</b></div>
+<div id="panel" style="display:none"></div>
+<style>
+  #panel {{ position:fixed; right:16px; top:16px; max-width:340px;
+    background:#241f18; border:1px solid #e9c46a; border-radius:10px;
+    padding:12px 14px; font-size:12.5px; box-shadow:0 6px 24px #000a; }}
+  #panel .t {{ color:#e9c46a; font-weight:bold; margin-bottom:6px; }}
+  #panel .d {{ color:#cdbfa3; font-style:italic; margin-bottom:6px; }}
+  #panel .s, #panel .i {{ color:#9a8f7a; margin-bottom:4px; }}
+  .node {{ cursor:pointer; }}
+</style>
+<script>
+var INFO = {info_json};
+var panel = document.getElementById('panel');
+document.querySelectorAll('.node').forEach(function(n) {{
+  n.addEventListener('click', function(ev) {{
+    var d = INFO[n.getAttribute('data-m')];
+    if (!d) return;
+    panel.innerHTML = '<div class="t"></div><div class="d"></div>'
+      + '<div class="s"></div><div class="i"></div>';
+    panel.querySelector('.t').textContent = d.t;
+    panel.querySelector('.d').textContent = d.d;
+    panel.querySelector('.s').textContent = d.s;
+    panel.querySelector('.i').textContent = d.i;
+    panel.style.display = 'block';
+    ev.stopPropagation();
+  }});
+}});
+document.body.addEventListener('click', function() {{
+  panel.style.display = 'none';
+}});
+</script>
 """
 
 

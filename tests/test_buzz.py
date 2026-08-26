@@ -472,3 +472,43 @@ def test_authored_lore_validation_and_play(world):
     s = engine.new_session(world)
     res = engine.answer(world, s, qid, "point", [mods[0]])
     assert res["correct"] and "where it lives" in res["explain"]
+
+
+def test_rescout_aftershocks(repo, world, tmp_path):
+    import subprocess
+    from buzz.rescout import rescout
+    w2 = world  # same world object; sha pinned at analyze time
+    old_sha = w2.sha
+    env_cfg = ["-c", "user.email=t@t", "-c", "user.name=t"]
+    # a fresh focused 2-module commit lands after the pin
+    (repo / "pkg/util.py").write_text("from .base import Base\n# new\n")
+    (repo / "pkg/text.py").write_text(
+        "from .base import Base\nfrom .util import helper\n# new\n")
+    subprocess.run(["git", *env_cfg, "commit", "-qam",
+                    "FIX keep helper defaults in sync with rendering (#9)"],
+                   cwd=repo, check=True)
+    r = rescout(w2, repo)
+    assert r["moved"] and r["commits"] >= 1
+    assert "util" in r["disturbed"] and "text" in r["disturbed"]
+    assert w2.sha != old_sha
+    if r["aftershocks"]:
+        qid = r["aftershocks"][0]
+        q = w2.questions[qid]
+        assert q.qtype == "patch" and q.truth["module"] in q.truth["suspects"]
+
+
+def test_atlas_renders(world):
+    from buzz.atlas import render_atlas
+    s = engine.new_session(world)
+    html_out = render_atlas(world, s)
+    assert "<svg" in html_out and "INFO" in html_out
+    assert world.start.split(".")[-1][:12] in html_out
+
+
+def test_recap_contains_solved_fact(world):
+    from buzz.recap import render_recap
+    s = engine.new_session(world)
+    q = next(q for q in world.questions.values() if q.qtype == "cycle")
+    engine.answer(world, s, q.id, "walk", q.truth["example"])
+    text = render_recap(world, s)
+    assert "Field notes" in text and "one real chain" in text

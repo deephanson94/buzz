@@ -292,6 +292,12 @@ exploring (free, no XP):
   buzz recap                   compile everything this run taught into
                                field notes (your keepable architecture
                                summary of the repo)
+  buzz standings               leaderboard across every scout playing this
+                               hive (sessions share one world)
+  buzz rescout [repo]          new-game+: see what changed since your
+                               world was pinned - disturbed districts,
+                               and fresh AFTERSHOCK quests from real new
+                               commits
   buzz scout <zone>            reveal a district's module NAMES (not edges)
   buzz quests all              one-line progress for every district
 
