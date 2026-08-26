@@ -117,7 +117,9 @@ def render_look(world: World, s: Session, at: str | None = None) -> str:
         f"file: {m.path} | {m.loc} lines | {m.commits} commits by "
         f"{m.authors} author(s)"
         + (f" | first commit {m.born}" if m.born else ""),
-        *([f'"{m.doc}"'] if m.doc else []),
+        *([f'"{m.doc}"'] if m.doc else
+          [f"~ scout's impression (AI-written, unverified): {m.gloss}"]
+          if m.gloss else []),
         zone_line,
         f"imported by {m.in_degree} module(s)"
         + (": " + ", ".join(sorted(e.src for e in world.in_edges(node) if e.src in s.discovered))

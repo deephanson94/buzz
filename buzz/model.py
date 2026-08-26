@@ -44,6 +44,8 @@ class Module:
     out_degree: int = 0
     born: str = ""            # date of first commit touching this file
     doc: str = ""             # first line of the module docstring
+    gloss: str = ""           # AI-authored one-liner (shown ONLY when the
+                              # file has no docstring; flavor, never truth)
 
 
 @dataclass
@@ -59,6 +61,7 @@ class Zone:
     name: str
     members: list[str] = field(default_factory=list)
     order: int = 0            # suggested play order, 0-based
+    brief: str = ""           # AI-authored district one-liner (flavor)
 
 
 @dataclass

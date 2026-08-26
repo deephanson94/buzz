@@ -53,11 +53,26 @@ def load_session(world: World) -> Session:
 def cmd_analyze(args: list[str]) -> None:
     from .analyze import analyze
     from .questions import generate_questions
+    lore = "--lore" in args
+    args = [a for a in args if a != "--lore"]
     if not args:
-        raise SystemExit("usage: buzz analyze <repo-path>")
+        raise SystemExit("usage: buzz analyze <repo-path> [--lore]")
     world = analyze(Path(args[0]))
     generate_questions(world)
     world.save(game_dir() / "world.json")
+    if lore:
+        from .lore import run_lore
+        print("authoring the lore layer (an LLM reads the map + source "
+              "heads; answers stay mechanically verified)...")
+        try:
+            r = run_lore(world)
+            world.save(game_dir() / "world.json")
+            print(f"lore: {len(r['added'])} semantic quest(s) added "
+                  f"({len(r['rejected'])} rejected by validation), "
+                  f"{r['zone_briefs']} district brief(s), "
+                  f"{r['glosses']} module gloss(es)")
+        except Exception as e:  # --lore must never break analyze
+            print(f"lore skipped: {e}")
     nq = len(world.questions)
     print(f"world built: {len(world.modules)} modules, {len(world.edges)} edges, "
           f"{len(world.zones)} zones, {nq} quests  (pinned to {world.sha[:10]})")

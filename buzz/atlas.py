@@ -127,7 +127,8 @@ def render_atlas(world: World, s: Session) -> str:
             if sealed_n:
                 outs.append(f"+{sealed_n} sealed tunnel(s)")
             info[m] = {"t": f"{m} — {mod.role}, {zname}",
-                       "d": mod.doc or mod.path,
+                       "d": mod.doc or (f"~ {mod.gloss} (AI impression)"
+                                        if mod.gloss else mod.path),
                        "s": (f"{mod.loc} lines · {mod.commits} commits · "
                              f"{mod.authors} authors"
                              + (f" · born {mod.born}" if mod.born else "")),
