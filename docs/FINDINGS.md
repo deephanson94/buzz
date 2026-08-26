@@ -29,6 +29,10 @@ applied between rounds. Passing bar: 8/10 on both.
 | 16 | decision tier reshaped (confirmation, n=2) | 6.50 | 7.50 |
 | 17 | + flow tier: journeys over the call graph (n=2) | 7.00 | 7.50 |
 | 18 | overworld map screen (keep-or-kill, n=2+1) | - | - |
+| W1 | overworld whispers + fellow scouts (purpose scoring, n=2+1) | - | - |
+| W2 | exam + badges (n=2, +confirmation) | 7.00 | 7.00 |
+| W2c | exam + badges confirmation (junior) | **8.00** | **8.00** |
+| W3 | wanted poster + onboarding export (completionist, n=1) | 7.00 | 8.00 |
 
 *Round 12 produced the program's deepest individual verdicts (an 8/9 and
 the first 9-learning score) alongside its lowest (4-continue from the
@@ -62,6 +66,50 @@ Fixed by testing every swept column, verified against the scout's exact
 tmux repro (bee halts at the wall; doorway still passes). 18c also
 noted marker count is deliberately not a proxy for quest count (shared
 targets collapse onto one '!'; district-wide searches get none).
+
+### The W-rounds (the "long job": three feature waves, each paneled)
+
+**W1 - whispers + fellow scouts** (scout-ux + scout-casual, purpose
+scoring). Both scouts caught the launch build's whispers never firing -
+verified real: the whisper hung off a successful Enter-travel, which
+obeys graph adjacency, so plain walking (the whole point) stayed
+silent. Fixed to fire on the walk itself, plus the ux round's asks:
+whispers stay on the status line while standing (a one-frame flash
+lost to a blink), the spawn tile whispers on first paint, wall bumps
+announce themselves, and the HUD names the tile under the bee. Fellow
+scouts verified end to end (live positions across concurrent sessions,
+shared-tile naming). Confirmation W1c: ship, all five behaviors pass,
+purpose 9 (from 4 pre-fix). Methodology note: the whisper fix landed
+while scout-ux was mid-round - the pin rule broken a second time; its
+pre-fix observations were discounted as contamination and the clean
+confirmation run re-established every claim.
+
+**W2 - exam + badges** (scout-staff + scout-junior). The staff audit
+was the program's best single report: 93 tool calls, four real bugs,
+two hard. (1) Boss stages 2/3 ungradeable in the exam - the scratch
+grading session carried no resolved quests, so stage-gating rejected
+answers the campaign had accepted; the exam told players they had
+forgotten things they had not. (2) Bare `exam` mid-run silently
+restarted the attempt, making "one attempt each" unenforceable. Both
+convergent critiques shipped: sampling flipped from newest-first (a
+recency quiz) to OLDEST solves; badges purged of command-spam mints
+(Cartographer/Surveyor cut, First Nectar added, denominators shown,
+class badges refuse to mint under 3 instances, Clean Sweep = full
+clear, Elder Sage = perfect exam). Confirmation W2c: ship, 8/8 checks,
+continue 8 / learning 8. Standing limitation, recorded not fixed:
+"no tools" during the exam is an honor system - one process cannot
+stop a player running `edges` in another shell.
+
+**W3 - wanted poster + onboarding export** (scout-completionist).
+`wanted` earned a clean keep - "a genuine remix of existing evidence
+types into one risk-free escalating-clue puzzle, not a re-skin" - won
+by real deduction (16 investigation commands, 1 accusation). Honest
+structural note: day-2 difficulty collapses once a session's fog is
+fully lifted; inherent to per-session fog, recorded as a v2 question.
+The export audit caught the recap headline quoting the WRONG file's
+docstring (root package picked by shortest name: `cli` beat `waggle`)
+- fixed by path depth, plus repo pointer, full hotspot list, and a
+"where this survey stopped" handover section.
 
 **Learning met the bar** (8.00 across four separate rounds, both repos;
 every claim graph-, git-, or source-checkable). **Continue peaked at 7.17
