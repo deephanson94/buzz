@@ -95,7 +95,7 @@ def apply_authored(world: World, items: list[dict]) -> dict:
             prompt=(f"{prompt.rstrip('.') }. Suspects: "
                     f"{', '.join(sorted(suspects))}. Read the code - the "
                     f"map alone cannot answer this. Point: "
-                    f"answer point <module>."),
+                    f"answer <module>."),
             truth={"module": ans, "suspects": sorted(suspects),
                    "hint": it.get("hint", ""), "why": it.get("lesson", "")},
             xp=30, distance=len(suspects),

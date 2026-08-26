@@ -196,13 +196,26 @@ def render_quests(world: World, s: Session, zone_id: str) -> str:
 
 
 def render_question(world: World, s: Session, q) -> str:
-    syntax = {
-        "walk": f"buzz answer {q.id} walk <module> <module> ... <module>",
-        "edge": f"buzz answer {q.id} edge <importer> <imported>",
-        "region": f"buzz answer {q.id} region <module> <module> ...",
-        "place": f"buzz answer {q.id} place <zone-id-or-name>",
-        "point": f"buzz answer {q.id} point <module>",
-    }[q.verb]
+    # placeholders named for what THIS quest means, not the wire verb - a
+    # dogfooder met 'edge <importer> <imported>' on an elder quest whose
+    # two names mean <older> <newer>
+    shapes = {
+        "elder": "<older> <newer>",
+        "direction": "<importer> <imported>",
+        "ghost": "<one-of-the-pair> <the-other>",
+        "refactor": "<importer> <imported>",
+        "walk": "<module> <module> ... (a chain, one import per hop)",
+        "region": "<module> <module> ... (the whole affected set)",
+        "place": "<district-id-or-name>",
+        "order": "<first> <second> ... (dependencies first)",
+    }
+    by_verb = {"walk": "<module> <module> ...",
+               "edge": "<importer> <imported>",
+               "region": "<module> <module> ...",
+               "place": "<district-id-or-name>",
+               "point": "<module>", "order": "<first> <second> ..."}
+    shape = shapes.get(q.qtype, by_verb[q.verb])
+    syntax = f"buzz answer {q.id} {shape}"
     st = _status_of(s, q.id)
     rule = ""
     if q.verb == "walk":
@@ -220,7 +233,6 @@ def render_question(world: World, s: Session, q) -> str:
              *([rule] if rule else []),
              *([evidence] if evidence else []), "",
              f"answer syntax: {syntax}",
-             "(the verb after the id is optional - the quest knows its own)",
              f"stuck? 'buzz hint {q.id}' (level 1 free-ish, costs XP; level 3 reveals)"]
     return "\n".join(lines)
 

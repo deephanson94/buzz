@@ -332,7 +332,7 @@ def gen_ghost(world: World, zone_id: str, boss: bool = False,
            f"{lead} Suspects: {', '.join(suspects)}. Investigate with "
            f"'buzz probe {x} <suspect>' and reason about which one would HAVE "
            f"to move when {x} moves, then draw the ghost edge: "
-           f"answer edge {x} <your-guess>.",
+           f"answer {x} <your-guess>.",
            {"src": x, "accepted": accepted, "best": partners[0][0],
             "shared": topn, "suspects": suspects},
            xp=20 * mult, distance=2, boss=boss)
@@ -359,7 +359,7 @@ def gen_hub(world: World, G: nx.DiGraph, zone_id: str,
     _q(world, zone_id, "hub", "point",
        f"Every district rests on one load-bearing wall. Which module in "
        f"{zone.name} is imported (top-level) by more of its own district "
-       f"than any other? Point at it: answer point <module>.",
+       f"than any other? Point at it: answer <module>.",
        {"module": hub, "count": n},
        xp=15, distance=n + 1)
     return 1
@@ -418,7 +418,7 @@ def gen_elder(world: World, zone_id: str, used: set | None = None) -> int:
        f"The elders' dispute. Two residents of {zone.name} both claim to be "
        f"the district's founder: {min(old, new)} and {max(old, new)}. Git "
        f"remembers. Draw time's arrow from the elder to the newcomer: "
-       f"answer edge <older> <newer>.",
+       f"answer <older> <newer>.",
        {"src": old, "dst": new,
         "born_src": world.modules[old].born, "born_dst": world.modules[new].born},
        xp=15, distance=2)
@@ -441,7 +441,7 @@ def gen_hotspot(world: World, zone_id: str, used: set | None = None) -> int:
     _q(world, zone_id, "hotspot", "point",
        f"Storm damage survey. One building in {zone.name} has been rebuilt "
        f"far more often than any other - the district's churn hotspot, where "
-       f"bugs and features keep landing. Point at it: answer point <module>.",
+       f"bugs and features keep landing. Point at it: answer <module>.",
        {"module": top, "commits": c1},
        xp=15, distance=len(zone.members) // 2 + 1)
     return 1
@@ -502,7 +502,7 @@ def gen_patch(world: World, zone_id: str, used: set | None = None) -> int:
        f"commit. Suspects: {', '.join(suspects)}. Unfamiliar names? "
        f"'buzz look <suspect>' tells you what each one is. Then probe each "
        f"pair for shared patches ('buzz probe {m} <suspect>') and match "
-       f"the DATE. Point at the companion: answer point <module>.",
+       f"the DATE. Point at the companion: answer <module>.",
        {"module": other, "anchor": m, "subject": ev["subject"],
         "date": ev["date"], "suspects": suspects, "surprising": surprising},
        xp=25, distance=2)
@@ -530,7 +530,7 @@ def gen_scar(world: World, zone_id: str, used: set | None = None) -> int:
            f"ROLLED BACK: \"{ev['subject']}\". Somewhere in "
            f"{zone.name} stands the module that bears that scar. Dig "
            f"through the history (git is fair game) and point at it: "
-           f"answer point <module>.",
+           f"answer <module>.",
            {"module": m, "subject": ev["subject"], "date": ev["date"]},
            xp=20, distance=2)
         return 1
@@ -592,7 +592,7 @@ def gen_gate(world: World, G: nx.DiGraph, zone_id: str,
                    f"The gate. Every top-level import route from {a} to {b} "
                    f"squeezes through a single LOCAL chokepoint - remove "
                    f"that one module and {a} loses {b} entirely.{excl} "
-                   f"Point at the chokepoint: answer point <module>.",
+                   f"Point at the chokepoint: answer <module>.",
                    {"a": a, "b": b, "module": g,
                     "accepted": sorted(set(accepted)),
                     "witness": nx.shortest_path(G, a, b)},
@@ -623,7 +623,7 @@ def gen_direction(world: World, zone_id: str, count: int = 2,
            f"Two residents, one dependency: {a} and {b}. Exactly one of "
            f"them imports the other (top-level). Getting this backwards is "
            f"how newcomers break builds - draw the edge the right way: "
-           f"answer edge <importer> <imported>.",
+           f"answer <importer> <imported>.",
            {"src": e.src, "dst": e.dst},
            xp=10, distance=2)
         made += 1
@@ -752,14 +752,14 @@ def make_followup(world: World, q: Question, n_existing: int) -> dict | None:
         a, b = path[0], path[1]
         prompt = (f"Follow-up: you just saw the chain {' -> '.join(path)}. "
                   f"First hop check - between {a} and {b}, who imports whom? "
-                  f"answer edge <importer> <imported>.")
+                  f"answer <importer> <imported>.")
         truth = {"src": a, "dst": b}
     elif q.qtype == "region":
         x = t["target"]
         member = t["region"][0]
         prompt = (f"Follow-up: {member} was in {x}'s blast radius. Draw the first "
                   f"dependency step: between {member} and {x}, who imports whom? "
-                  f"answer edge <importer> <imported>.")
+                  f"answer <importer> <imported>.")
         truth = {"src": member, "dst": x}
     elif q.qtype == "place":
         x = t["module"]
@@ -770,7 +770,7 @@ def make_followup(world: World, q: Question, n_existing: int) -> dict | None:
         if x == top or not (world.has_edge(x, top) or world.has_edge(top, x)):
             return None
         prompt = (f"Follow-up: {x} lives in {zname}. Its anchor is {top}. Between "
-                  f"{x} and {top}, who imports whom? answer edge <importer> <imported>.")
+                  f"{x} and {top}, who imports whom? answer <importer> <imported>.")
         src, dst = (x, top) if world.has_edge(x, top) else (top, x)
         truth = {"src": src, "dst": dst}
     else:
