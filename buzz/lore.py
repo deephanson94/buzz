@@ -66,7 +66,8 @@ def build_brief(world: World) -> str:
         "Return ONE JSON object (no markdown fences, no prose) with keys:\n"
         '  "quests": a JSON list following map.contract exactly - about '
         "questions_per_zone per district, asking WHERE a behavior or "
-        "responsibility lives;\n"
+        "responsibility lives, written in the game's voice per "
+        "map.contract.voice;\n"
         '  "zone_briefs": {zone-id: one-sentence description of what that '
         "district collectively does};\n"
         '  "glosses": {module-name: one-line purpose} for every module in '

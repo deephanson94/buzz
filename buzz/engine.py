@@ -390,7 +390,7 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
                              f"{left} left after this one)")}
     elif q.verb == "edge":
         if len(args) != 2:
-            raise GameError("answer edge <importer> <imported>")
+            raise GameError("answer <importer> <imported>")
         a, b = (resolve_module(world, x) for x in args)
         if q.qtype == "ghost":
             pair_ok = (a == t["src"] and b in t["accepted"]) or \
@@ -455,7 +455,7 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
             note = f"{world.zones[z].name} is not where it lives"
     elif q.verb == "point":
         if len(args) != 1:
-            raise GameError("answer point <module>")
+            raise GameError("answer <module>")
         m = resolve_module(world, args[0])
         ok_set = set(t.get("accepted") or [t["module"]])
         correct = m in ok_set
