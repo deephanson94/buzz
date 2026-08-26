@@ -685,3 +685,24 @@ def test_decision_generators_on_synthetic_graph():
     via = next(q for q in w.questions.values() if q.qtype == "via")
     assert via.truth["via"] in via.truth["example"][1:-1] or \
         via.truth["via"] in via.truth["example"]
+
+
+def test_order_red_herring_on_second_instance():
+    from buzz.model import Question, Edge, LAZY
+    from buzz.questions import gen_order
+    from buzz.analyze import top_graph
+    w = _mini_world([("b", "a"), ("c", "b"), ("d", "a")],
+                    ["a", "b", "c", "d"])
+    # the fake constraint: a lazy a->c import whose REAL top-level
+    # dependency (c transitively imports a) points the other way
+    w.edges.append(Edge(src="a", dst="c", kind=LAZY))
+    # a prior order quest anywhere in the world makes this the second one
+    w.questions["q0"] = Question(id="q0", zone="z1", qtype="order",
+                                 verb="order", prompt="", truth={}, xp=30)
+    G = top_graph(w)
+    assert gen_order(w, G, "z1", used=set()) == 1
+    q = next(q for q in w.questions.values()
+             if q.qtype == "order" and q.truth)
+    assert q.truth.get("herring") == ["a", "c"]
+    # and the naive order (counting the fake edge) violates a real pair
+    assert ("c", "a") in {tuple(p) for p in q.truth["pairs"]}

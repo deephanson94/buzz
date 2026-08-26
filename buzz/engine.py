@@ -284,8 +284,13 @@ def _explain(world: World, q: Question) -> str:
                 f"leaves {t['n_lose']} - redundant routes keep carrying "
                 f"the reach")
     if q.qtype == "order":
+        her = t.get("herring")
         return (f"one valid order: {' -> '.join(t['example'])} - every "
-                f"module lands after everything it imports")
+                f"module lands after everything it imports"
+                + (f" (and the {her[0]} -> {her[1]} import is "
+                   f"function-level/type-only: it never runs, so it "
+                   f"constrained nothing - the real dependency points the "
+                   f"other way)" if her else ""))
     if q.qtype == "region":
         why = t.get("why")
         if why:  # show the witness chain behind every ruling

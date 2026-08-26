@@ -698,6 +698,10 @@ def gen_via(world: World, G: nx.DiGraph, zone_id: str,
     used = used if used is not None else set()
     if _sig("via", zone_id) in used:
         return 0
+    # a panel caught the second via coming out EASIER than the first -
+    # repeats must escalate, so later instances demand a longer tour
+    min_len = 3 + sum(1 for q in world.questions.values()
+                      if q.qtype == "via")
     for via in sorted(zone.members,
                       key=lambda m: -world.modules[m].betweenness):
         if not G.has_node(via):
@@ -710,7 +714,7 @@ def gen_via(world: World, G: nx.DiGraph, zone_id: str,
                 if dst == src:
                     continue
                 d2 = nx.shortest_path_length(G, via, dst)
-                if not 1 <= d2 <= 2 or d1 + d2 < 3:
+                if not 1 <= d2 <= 2 or d1 + d2 < min_len:
                     continue
                 if _sig("walk", src, dst) in used or \
                         _sig("via", src, via, dst) in used:
@@ -753,37 +757,60 @@ def gen_order(world: World, G: nx.DiGraph, zone_id: str,
     # prefer 5-module instances (harder to eyeball off one edges dump);
     # fall back to 4. A full chain on k nodes has k*(k-1)/2 transitive
     # pairs and exactly ONE valid order - copy-the-arrows, no decision -
-    # so the pair count is capped strictly below that.
-    for k, lo, hi in ((5, 4, 8), (4, 3, 5)):
-        for combo in combinations(sorted(members), k):
-            pairs = []
-            mutual = False
-            for u in combo:
-                for v in combo:
-                    if u == v:
+    # so the pair count is capped strictly below that. The SECOND order
+    # quest in a world must carry a red herring: a function-level or
+    # type-only import between two of the modules that constrains NOTHING
+    # (a panel solved the repeat by rote; this punishes careless reading).
+    second = any(q.qtype == "order" for q in world.questions.values())
+    for need_herring in ([True, False] if second else [False]):
+        for k, lo, hi in ((5, 4, 8), (4, 3, 5)):
+            for combo in combinations(sorted(members), k):
+                pairs = []
+                mutual = False
+                for u in combo:
+                    for v in combo:
+                        if u == v:
+                            continue
+                        if nx.has_path(G, u, v):
+                            if nx.has_path(G, v, u):
+                                mutual = True
+                            pairs.append((u, v))  # u transitively imports v
+                if mutual or not lo <= len(pairs) <= hi:
+                    continue
+                herring = None
+                if need_herring:
+                    cset = set(combo)
+                    for e in world.edges:
+                        # a lazy/type-only edge u->v whose REAL top-level
+                        # dependency runs the other way: counting the fake
+                        # edge as a constraint yields an INVALID order
+                        if (e.kind != TOP and e.src in cset
+                                and e.dst in cset
+                                and (e.dst, e.src) in pairs):
+                            herring = [e.src, e.dst]
+                            break
+                    if not herring:
                         continue
-                    if nx.has_path(G, u, v):
-                        if nx.has_path(G, v, u):
-                            mutual = True
-                        pairs.append((u, v))  # u (transitively) imports v
-            if mutual or not lo <= len(pairs) <= hi:
-                continue
-            H = nx.DiGraph()
-            H.add_nodes_from(combo)
-            H.add_edges_from((v, u) for u, v in pairs)  # dependency first
-            example = list(nx.topological_sort(H))
-            used.add(_sig("order", zone_id))
-            _q(world, zone_id, "order", "order",
-               f"The migration plan. These {k} modules are being "
-               f"rewritten: {', '.join(combo)}. Rule: a module may only "
-               f"be rewritten AFTER everything it imports (directly or "
-               f"through top-level chains) is already done. Several valid "
-               f"orders exist - give ANY one, dependencies first: "
-               f"answer order {' '.join('<' + str(i + 1) + '>' for i in range(k))}.",
-               {"set": sorted(combo), "pairs": [[u, v] for u, v in pairs],
-                "example": example},
-               xp=30, distance=k)
-            return 1
+                H = nx.DiGraph()
+                H.add_nodes_from(combo)
+                H.add_edges_from((v, u) for u, v in pairs)  # deps first
+                example = list(nx.topological_sort(H))
+                used.add(_sig("order", zone_id))
+                truth = {"set": sorted(combo),
+                         "pairs": [[u, v] for u, v in pairs],
+                         "example": example}
+                if herring:
+                    truth["herring"] = herring
+                _q(world, zone_id, "order", "order",
+                   f"The migration plan. These {k} modules are being "
+                   f"rewritten: {', '.join(combo)}. Rule: a module may "
+                   f"only be rewritten AFTER everything it imports "
+                   f"(directly or through top-level chains) is already "
+                   f"done. {EDGE_RULE} Several valid orders exist - give "
+                   f"ANY one, dependencies first: answer order "
+                   f"{' '.join('<' + str(i + 1) + '>' for i in range(k))}.",
+                   truth, xp=35 if herring else 30, distance=k)
+                return 1
     return 0
 
 
@@ -829,9 +856,9 @@ def generate_questions(world: World) -> None:
     # generous caps: the bracketing gate (buzz calibrate) prunes shallow
     # and broken questions afterward, so generation runs wide - scaled so a
     # big repo's post-calibration world isn't clearable at 5% coverage
-    # region tightened 6 -> 4: by the fifth blast radius panels reported
-    # re-running the same worksheet, not learning
-    CAPS = {"cycle": 2, "region": 4, "hub": 3, "ghost": 8, "gate": 6,
+    # measurement templates tightened round over round: by the fourth
+    # blast radius / second hub, panels report re-running a worksheet
+    CAPS = {"cycle": 2, "region": 3, "hub": 2, "ghost": 8, "gate": 6,
             "place": 5, "elder": 5, "hotspot": 5, "patch": 6, "scar": 3}
 
     def capped(qt: str) -> bool:
