@@ -230,6 +230,15 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
     pad = curses.newpad(height + 4, 130)
     bee = list(tiles.get(s.here, (4, 4)))
     msg = "arrows move · Enter travels · l look · e quests · ? help · Q quits"
+    # a whisper stays on the status line while the bee STANDS on its
+    # tile (round W1: a one-frame flash was lost to a blink), and the
+    # spawn tile whispers on first paint - starting somewhere is
+    # arriving there
+    whisper_line, whisper_tile = "", None
+    _first = _whisper(world, s, s.here) if s.here else None
+    if _first:
+        whisper_line, whisper_tile = _first, s.here
+        save(s)
 
     def tile_at(bx, by):
         for m, (tx, ty) in tiles.items():
@@ -263,6 +272,8 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
         scr.erase()
         hud = (f" xp {s.xp} · streak {s.streak} · facts {len(s.resolved)}/"
                f"{len(world.questions)} · at {s.here}")
+        if here_m and here_m != s.here:
+            hud += f" · bee over {here_m}"
         scr.addstr(0, 0, hud[: maxx - 1], curses.A_REVERSE)
         scr.refresh()
         # viewport follows the bee
@@ -290,9 +301,9 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
             info = (f"{n} open quest{'s' if n != 1 else ''} in this "
                     f"district - 'e' lists them, ! tiles are named by them"
                     if n else "")
-        line = msg or info
+        line = msg or whisper_line or info
         attr = (curses.color_pair(5) | curses.A_BOLD
-                if msg.startswith("~") else curses.A_DIM)
+                if line.startswith("~") else curses.A_DIM)
         scr.addstr(maxy - 1, 0, line[: maxx - 1], attr)
         msg = ""  # events flash once; ambient info returns next frame
         scr.refresh()
@@ -333,19 +344,25 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
                 # what whispers, not traveling (round W1: gating on a
                 # successful 'go' meant most walks stayed silent)
                 stepped = tile_at(bee[0], bee[1])
+                if stepped != whisper_tile:
+                    whisper_line, whisper_tile = "", None
                 if stepped:
                     whisper = _whisper(world, s, stepped)
                     if whisper:
-                        msg = whisper
+                        whisper_line, whisper_tile = whisper, stepped
                         save(s)
+            else:
+                # a bump should say so - silent non-movement made the
+                # doorway hunt pure trial and error (round W1)
+                msg = "a wall - the doorways are the gaps in the walls"
         elif k in (curses.KEY_ENTER, 10, 13) and here_m:
             try:
                 how = engine.go(world, s, here_m)
                 save(s)
                 whisper = _whisper(world, s, s.here)
-                msg = (whisper if whisper
-                       else f"[{how}] arrived at {s.here}")
+                msg = f"[{how}] arrived at {s.here}"
                 if whisper:
+                    whisper_line, whisper_tile = whisper, here_m
                     save(s)
             except GameError as e:
                 msg = f"! {e}"
