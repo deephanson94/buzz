@@ -238,6 +238,15 @@ def render_question(world: World, s: Session, q) -> str:
     return "\n".join(lines)
 
 
+def _badge_line(world: World, s: Session) -> str:
+    from .badges import earned
+    got = ", ".join(name for name, _ in earned(world, s))
+    line = f"badges: {got or 'none yet'}"
+    if s.exam.get("best"):
+        line += f" | exam best: {s.exam['best']}% retention"
+    return line
+
+
 def render_status(world: World, s: Session) -> str:
     d, total = coverage(world, s)
     solved = sum(1 for v in s.resolved.values() if v == "correct")
@@ -266,6 +275,7 @@ def render_status(world: World, s: Session) -> str:
         + (f" (+{min(50, 5 * s.streak)}% XP on the next clean solve)"
            if s.streak else " (first-try, hint-free solves build a bonus)"),
         f"abilities: {', '.join(s.abilities) or 'none yet'}",
+        _badge_line(world, s),
         "boss lair: " + (
             "CLEARED" if (boss_qs := [q for q in world.questions.values() if q.boss])
             and all(q.id in s.resolved for q in boss_qs)

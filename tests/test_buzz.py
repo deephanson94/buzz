@@ -818,3 +818,60 @@ def test_overworld_layout_pure(world):
     assert height > 0
     # no two tiles collide
     assert len({v for v in tiles.values()}) == len(tiles)
+
+
+def test_exam_flow(world):
+    from buzz import exam
+    s = engine.new_session(world)
+    with pytest.raises(engine.GameError):
+        exam.start(world, s)   # nothing solved yet
+    # solve enough quests honestly to open the exam
+    solved = 0
+    for q in list(world.questions.values()):
+        if solved >= 4 or q.boss:
+            continue
+        t = q.truth
+        try:
+            if q.verb == "walk":
+                r = engine.answer(world, s, q.id, "walk", t["example"])
+            elif q.verb == "point":
+                r = engine.answer(world, s, q.id, "point", [t["module"]])
+            elif q.verb == "edge" and "dst" in t:
+                r = engine.answer(world, s, q.id, "edge", [t["src"], t["dst"]])
+            elif q.verb == "region":
+                r = engine.answer(world, s, q.id, "region", t["region"])
+            else:
+                continue
+        except engine.GameError:
+            continue
+        if r.get("correct"):
+            solved += 1
+    if solved < 4:
+        pytest.skip("fixture too small to open the exam")
+    r = exam.start(world, s)
+    total = r["total"]
+    xp_before = s.xp
+    # answer every exam question correctly from truth
+    for _ in range(total):
+        q = exam.current(world, s)
+        t = q.truth
+        args = (t["example"] if q.verb == "walk"
+                else [t["module"]] if q.verb == "point"
+                else [t["src"], t["dst"]] if q.verb == "edge"
+                else t["region"])
+        res = exam.grade(world, s, args)
+    assert res["done"] and res["pct"] == 100 and res["title"] == "Elder Sage"
+    assert s.xp == xp_before          # the exam pays nothing
+    assert s.exam["best"] == 100
+
+
+def test_badges_earned(world):
+    from buzz.badges import earned
+    s = engine.new_session(world)
+    assert not any(n == "Cartographer" for n, _ in earned(world, s))
+    s.discovered = list(world.modules)
+    s.seen = list(world.modules)
+    names = [n for n, _ in earned(world, s)]
+    assert "Cartographer" in names and "Surveyor" in names
+    s.best_streak = 10
+    assert "Streak Lord" in [n for n, _ in earned(world, s)]

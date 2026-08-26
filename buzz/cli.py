@@ -486,6 +486,43 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
             engine._name_seen(s, a, b)
             print(f"[{a} x {b}]")
             print(engine.probe(world, a, b))
+    elif cmd == "exam":
+        from . import exam as _exam
+        if not rest:
+            r = _exam.start(world, s)
+            q = r["q"]
+            print(f"THE EXAM - recall, no tools, no hints, one attempt "
+                  f"each, 0 XP. {r['total']} questions from quests you "
+                  f"solved. Retention is the score.")
+            print(f"\n[1/{r['total']}] {q.prompt}")
+            print("answer with: buzz exam <your answer...>")
+        else:
+            r = _exam.grade(world, s, rest)
+            from .ui import paint
+            print(paint("RECALLED." if r["ok"] else "slipped away.",
+                        "green" if r["ok"] else "yellow"))
+            if r["done"]:
+                print(f"\nexam over: {r['pct']}% retention "
+                      f"({len(s.exam['correct'])}/{r['total']}) - "
+                      f"title: {r['title']}"
+                      + (f" · personal best {r['best']}%"
+                         if r["best"] != r["pct"] else ""))
+                if r["missed"]:
+                    print("revisit these (the truth is one 'buzz quest "
+                          "<id>' away): " + ", ".join(r["missed"]))
+                print("(retention fades - re-examine after your next "
+                      "session away)")
+            else:
+                q = r["next"]
+                print(f"\n[{r['i'] + 1}/{r['total']}] {q.prompt}")
+                print("answer with: buzz exam <your answer...>")
+    elif cmd == "badges":
+        from .badges import BADGES, earned
+        have = dict(earned(world, s))
+        print("badges of this hive:")
+        for name, desc, _fn in BADGES:
+            mark = "*" if name in have else " "
+            print(f"  [{mark}] {name:12} - {desc}")
     elif cmd in ("notes", "facts"):
         # the mid-run glance every panel asked for: just the lessons, no
         # wall of recap - keeps 'I am learning' alive between beats
