@@ -308,16 +308,24 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
                   else 1 if k in (curses.KEY_DOWN, ord("s")) else 0)
             nx = max(1, min(127, bee[0] + dx))
             ny = max(1, min(height, bee[1] + dy))
-            # walls block; doorways (the gap in each bottom wall) pass
+            # walls block; doorways (the gap in each bottom wall) pass.
+            # a horizontal step is 2 columns wide, so test every swept
+            # column - landing checks alone let the bee hop OVER a wall
+            # whose column parity differs (round 18c: the right wall)
             blocked = False
             for zid, (x, y, w, h) in rooms.items():
-                on_v = ny in (y, y + h - 1) and x <= nx <= x + w - 1
-                on_h = nx in (x, x + w - 1) and y <= ny <= y + h - 1
-                if on_v or on_h:
-                    door = x + w // 2
-                    if ny == y + h - 1 and door - 1 <= nx <= door:
-                        continue  # through the doorway
-                    blocked = True
+                for sx in range(min(bee[0], nx), max(bee[0], nx) + 1):
+                    if sx == bee[0] and ny == bee[1]:
+                        continue  # standing ground never blocks
+                    on_v = ny in (y, y + h - 1) and x <= sx <= x + w - 1
+                    on_h = sx in (x, x + w - 1) and y <= ny <= y + h - 1
+                    if on_v or on_h:
+                        door = x + w // 2
+                        if ny == y + h - 1 and door - 1 <= sx <= door:
+                            continue  # through the doorway
+                        blocked = True
+                        break
+                if blocked:
                     break
             if not blocked:
                 bee[0], bee[1] = nx, ny
