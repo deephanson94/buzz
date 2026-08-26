@@ -45,6 +45,12 @@ add scout-casual to almost any round - it is cheap.
 
 - Never skip the panel for a gameplay change because it is "just a
   view" or "optional" - that mistake shipped an aimless screen once.
+- **Pin the code under test for the whole round.** The game runs from
+  the editable install, so switching git branches mid-round changes the
+  game under the scouts' feet - a round-18 scout reported "quest
+  markers permanently degrade" that was really the reviewer checking
+  out a different branch mid-run. Never switch branches while scouts
+  are running; if you must work meanwhile, use a separate worktree.
 - Scouts never read the game's implementation; they play it.
 - Panel scores saturate: agents tolerate what humans will not (walls of
   text) and know what humans do not (architecture priors). The owner's
