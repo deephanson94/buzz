@@ -90,6 +90,8 @@ class World:
     cochange: dict[str, list] = field(default_factory=dict)  # name -> [[other, shared], ...]
     events: list = field(default_factory=list)    # focused 2-module commits
     reverts: list = field(default_factory=list)   # reverted changes
+    calls: list = field(default_factory=list)     # cross-module CALL edges
+    entries: list = field(default_factory=list)   # likely run entry points
     start: str = ""
 
     def out_edges(self, name: str) -> list[Edge]:
@@ -113,6 +115,8 @@ class World:
             "cochange": self.cochange,
             "events": self.events,
             "reverts": self.reverts,
+            "calls": self.calls,
+            "entries": self.entries,
         }
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=1))
@@ -128,6 +132,8 @@ class World:
         w.cochange = d["cochange"]
         w.events = d.get("events", [])
         w.reverts = d.get("reverts", [])
+        w.calls = d.get("calls", [])
+        w.entries = d.get("entries", [])
         return w
 
 

@@ -11,7 +11,7 @@ from .ui import paint
 
 COMMANDS = [
     "map", "look", "edges", "go", "quests", "quest", "scout", "answer",
-    "hint", "probe", "trace", "chronicle", "who", "notes", "atlas",
+    "hint", "probe", "trace", "chronicle", "who", "flow", "notes", "atlas",
     "recap", "standings", "rescout", "status", "words", "help", "quit",
 ]
 VERBS = ["walk", "edge", "region", "place", "point", "order"]
@@ -24,7 +24,7 @@ SHORT_HELP = """the moves (tab completes everything; no 'buzz' prefix needed):
   scout <district>             reveal which files a district holds (z1, z2...)
   probe <a> <b>                how are two files related? imports + shared commits
   trace <m1> <m2> ...          test a chain of imports BEFORE you answer
-  who <m>                      which files import this one
+  who <m>                      which files import this one\n  flow <m>                     where a file's work GOES at runtime (calls)
   chronicle <m>                this file's commit history
   edges [district]             every import inside a district, counted up
   notes                        the lessons you have learned so far

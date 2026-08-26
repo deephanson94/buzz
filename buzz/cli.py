@@ -442,6 +442,11 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
         if not rest:
             raise GameError("usage: buzz chronicle <module>")
         print("\n".join(engine.chronicle(world, s, rest[0])))
+    elif cmd == "flow":
+        if not rest:
+            raise GameError("usage: buzz flow <module>  (a module you have "
+                            "already read)")
+        print("\n".join(engine.flow(world, s, rest[0])))
     elif cmd == "who":
         if not rest:
             raise GameError("usage: buzz who <module>")
