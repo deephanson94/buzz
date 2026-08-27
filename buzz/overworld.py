@@ -18,20 +18,32 @@ from .engine import GameError
 from .model import World, Session, ROLE_BOSS, ROLE_BEDROCK, ROLE_GATE, \
     ROLE_SWAMP
 
-TILE_W = 14          # character cells per module tile
+TILE_W = 14          # minimum character cells per module tile
 ROOM_PAD = 2
+
+
+def _tile_w(world: World) -> int:
+    """Tile width adapts to the hive: small worlds have screen to spare,
+    so no name gets cut to 'neuron_to...' when 'neuron_tools' would fit.
+    Big worlds keep the compact minimum so rooms still tile the screen."""
+    longest = max((len(m.split(".")[-1]) for m in world.modules), default=8)
+    if len(world.modules) > 30:
+        return TILE_W
+    return max(TILE_W, min(26, longest + 4))
 
 
 def compute_layout(world: World, width: int = 110):
     """Pure layout (unit-testable without curses): rooms as character-cell
-    boxes {zid: (x, y, w, h)}, module tiles {name: (x, y)}."""
+    boxes {zid: (x, y, w, h)}, module tiles {name: (x, y)}, total height,
+    and the tile width used."""
+    tile_w = _tile_w(world)
     rooms, tiles = {}, {}
     x, y, row_h = 2, 2, 0
     for z in sorted(world.zones.values(), key=lambda z: z.order):
         n = max(1, len(z.members))
         cols = max(2, int(n ** 0.5 * 1.4 + 0.99))
         rows = -(-n // cols)
-        w = cols * TILE_W + ROOM_PAD * 2
+        w = cols * tile_w + ROOM_PAD * 2
         h = rows * 2 + 3
         if x + w > width and x > 2:
             x = 2
@@ -39,11 +51,11 @@ def compute_layout(world: World, width: int = 110):
             row_h = 0
         rooms[z.id] = (x, y, w, h)
         for i, m in enumerate(sorted(z.members)):
-            tiles[m] = (x + ROOM_PAD + (i % cols) * TILE_W,
+            tiles[m] = (x + ROOM_PAD + (i % cols) * tile_w,
                         y + 2 + (i // cols) * 2)
         row_h = max(row_h, h)
         x += w + 3
-    return rooms, tiles, y + row_h + 3
+    return rooms, tiles, y + row_h + 3, tile_w
 
 
 ROLE_GLYPH = {ROLE_BOSS: "B", ROLE_BEDROCK: "#", ROLE_GATE: "%",
@@ -136,7 +148,7 @@ def _quest_marks(world: World, s: Session):
     return marks, zone_open
 
 
-def _draw_map(pad, world: World, s: Session, rooms, tiles):
+def _draw_map(pad, world: World, s: Session, rooms, tiles, tile_w=TILE_W):
     pad.erase()
     seen, disc = set(s.seen), set(s.discovered)
     masked = render.masked_modules(world, s)
@@ -180,8 +192,8 @@ def _draw_map(pad, world: World, s: Session, rooms, tiles):
                     else curses.A_DIM)
                 tail = "???" if m in masked and m not in disc \
                     else m.split(".")[-1]
-                label = (tail if len(tail) <= TILE_W - 4
-                         else tail[: TILE_W - 5] + "…")
+                label = (tail if len(tail) <= tile_w - 4
+                         else tail[: tile_w - 5] + "…")
                 pad.addstr(ty, tx, f"{glyph} {label}", attr)
             except curses.error:
                 pass
@@ -226,7 +238,7 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
             curses.init_pair(i, c, -1)
         except curses.error:
             pass
-    rooms, tiles, height = compute_layout(world)
+    rooms, tiles, height, tile_w = compute_layout(world)
     pad = curses.newpad(height + 4, 130)
     bee = list(tiles.get(s.here, (4, 4)))
     msg = "arrows move · Enter travels · l look · e quests · ? help · Q quits"
@@ -242,12 +254,12 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
 
     def tile_at(bx, by):
         for m, (tx, ty) in tiles.items():
-            if ty == by and tx <= bx < tx + TILE_W - 2:
+            if ty == by and tx <= bx < tx + tile_w - 2:
                 return m
         return None
 
     while True:
-        _draw_map(pad, world, s, rooms, tiles)
+        _draw_map(pad, world, s, rooms, tiles, tile_w)
         maxy, maxx = scr.getmaxyx()
         others = _other_scouts(world, s, sessions_dir)
         for om, names in others.items():
