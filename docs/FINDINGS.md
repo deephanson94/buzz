@@ -33,6 +33,7 @@ applied between rounds. Passing bar: 8/10 on both.
 | W2 | exam + badges (n=2, +confirmation) | 7.00 | 7.00 |
 | W2c | exam + badges confirmation (junior) | **8.00** | **8.00** |
 | W3 | wanted poster + onboarding export (completionist, n=1) | 7.00 | 8.00 |
+| SNAP | tile-snap overworld movement (purpose scoring, n=2+2) | - | - |
 
 *Round 12 produced the program's deepest individual verdicts (an 8/9 and
 the first 9-learning score) alongside its lowest (4-continue from the
@@ -110,6 +111,28 @@ The export audit caught the recap headline quoting the WRONG file's
 docstring (root package picked by shortest name: `cli` beat `waggle`)
 - fixed by path depth, plus repo pointer, full hotspot list, and a
 "where this survey stopped" handover section.
+
+**SNAP - tile-snap movement** (owner-directed after the dogfood
+verdict "I still don't know how the TUI works"). Movement rebuilt: the
+bee is always ON a module and one keypress hops to the nearest tile in
+that direction, rooms included; a first-visit card teaches the loop.
+Round: casual 8/ship ("feels like a game", cold open ~5s), ux hold on
+apparent hop non-determinism. The convergent real fixes: overlay close
+drains queued input (buffered arrows replayed into the map), vertical
+hops weigh row distance against horizontal drift and tie-break toward
+column alignment. The ux re-confirmation then re-held on a burst test
+- which forensics showed was run on a session whose ONE-TIME card was
+already consumed: the keys hit a live map and were ordinary input; the
+"replayed" end state was byte-identical to legitimate hop-by-hop
+movement. A protocol-tightened final round (card presence PROVEN on
+screen before bursting, 3 fresh sessions) verified the drain absorbs
+the full burst every time: ship, purpose 7. Methodology lessons: (a) a
+scout's bug report needs the same adversarial verification as a
+scout's pass; (b) one-shot state (a once-per-session card) silently
+invalidates repeat tests - protocols must assert the precondition on
+screen, not assume it. Remaining known quirk, now explained on the
+card: on sparse rows a vertical hop drifts to the nearest tile, which
+can read as sideways movement.
 
 **Learning met the bar** (8.00 across four separate rounds, both repos;
 every claim graph-, git-, or source-checkable). **Continue peaked at 7.17

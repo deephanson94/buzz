@@ -6,8 +6,8 @@ Optional and never load-bearing: every action calls the exact engine the
 shell uses (go/peek/quests), agents and pipes keep the one-shot
 interface, and quitting drops you back where you were.
 
-Keys: arrows/wasd move · Enter travel to the tile under you · l look ·
-e quests here · ? help · Q or ESC leave
+Keys: arrows/wasd hop module to module · Enter travel to the tile under
+you · l look · e quests here · ? help · Q or ESC leave
 """
 from __future__ import annotations
 
@@ -60,6 +60,27 @@ def compute_layout(world: World, width: int = 110):
 
 ROLE_GLYPH = {ROLE_BOSS: "B", ROLE_BEDROCK: "#", ROLE_GATE: "%",
               ROLE_SWAMP: "~"}
+
+HELP_LINES = [
+    "THE OVERWORLD - how it works",
+    "",
+    "the loop: hop to a ! tile, press e to read its quest,",
+    "then answer in the shell ('buzz answer <id> ...') -",
+    "the overworld is for roaming and finding things out.",
+    "",
+    "arrows / wasd   hop module to module (rooms = districts;",
+    "                the hop drifts to the NEAREST tile when",
+    "                none sits straight ahead)",
+    "Enter           formally travel here - fog and seals can",
+    "                refuse you; that is the game, not an error",
+    "l               spyglass the module under you (look)",
+    "e               quests of this district",
+    "Q or ESC        back to the shell",
+    "",
+    "tiles: ! quest starts here · B boss · # bedrock · % gate",
+    "       ~ swamp · o worker · ·· fog · b a fellow scout",
+    "walking whispers one true fact per tile per session.",
+]
 
 
 def _whisper(world: World, s: Session, m: str) -> str | None:
@@ -199,6 +220,17 @@ def _draw_map(pad, world: World, s: Session, rooms, tiles, tile_w=TILE_W):
                 pass
 
 
+def _drain(scr):
+    """Eat buffered input. Keys typed before a screen existed - during
+    launch, or while an overlay was up - must never replay into the map
+    (flushinp alone races a fast typist; settle, then drain)."""
+    scr.nodelay(True)
+    curses.napms(80)
+    while scr.getch() != -1:
+        pass
+    scr.nodelay(False)
+
+
 def _overlay(scr, lines, title=""):
     """Full-screen text overlay. Returns True if the player pressed
     Q/ESC (quit the whole overworld), False for a plain dismiss."""
@@ -223,6 +255,9 @@ def _overlay(scr, lines, title=""):
         elif k in (curses.KEY_UP, ord("k")) and top > 0:
             top = max(0, top - 3)
         else:
+            # keys queued while the overlay was up must NOT replay into
+            # the map (round SNAP: 'one press moved 3 tiles')
+            _drain(scr)
             # Q/ESC means QUIT THE OVERWORLD, even from an overlay - both
             # round-18 scouts hung when an overlay swallowed their quit
             return k in (ord("Q"), 27)
@@ -240,8 +275,12 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
             pass
     rooms, tiles, height, tile_w = compute_layout(world)
     pad = curses.newpad(height + 4, 130)
-    bee = list(tiles.get(s.here, (4, 4)))
-    msg = "arrows move · Enter travels · l look · e quests · ? help · Q quits"
+    # tile-snap movement (owner's call after rounds 18-W1 converged on
+    # "navigation is tedious"): the bee is always ON a module tile, and
+    # one keypress hops to the nearest tile in that direction - across
+    # rooms too, so districts are grouping, not obstacle course
+    cur = s.here if s.here in tiles else next(iter(tiles), None)
+    msg = "arrows hop module to module · Enter travels · l look · e quests · ? help · Q quits"
     # a whisper stays on the status line while the bee STANDS on its
     # tile (round W1: a one-frame flash was lost to a blink), and the
     # spawn tile whispers on first paint - starting somewhere is
@@ -251,12 +290,46 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
     if _first:
         whisper_line, whisper_tile = _first, s.here
         save(s)
+    # the owner's dogfood verdict on rounds 18-W1: 'I still don't know
+    # how the TUI works.' First visit opens the how-it-works card - once
+    # per session, any key dismisses it
+    if "overworld-visited" not in s.log:
+        s.log.append("overworld-visited")
+        save(s)
+        if _overlay(scr, HELP_LINES, title="welcome to the overworld"):
+            return
+    _drain(scr)  # input from before this screen existed is not input
 
-    def tile_at(bx, by):
-        for m, (tx, ty) in tiles.items():
-            if ty == by and tx <= bx < tx + tile_w - 2:
-                return m
-        return None
+    def hop(frm, dx, dy):
+        """The next tile in a direction, or None at the map's edge.
+        Horizontal: the neighbor in the same row (rooms included - the
+        corridor is one hop). Vertical: the nearest row beyond, then
+        the tile in it nearest in x."""
+        tx, ty = tiles[frm]
+        if dx:
+            row = sorted((x, m) for m, (x, y2) in tiles.items() if y2 == ty)
+            i = [m for _, m in row].index(frm) + (1 if dx > 0 else -1)
+            return row[i][1] if 0 <= i < len(row) else None
+        rows = sorted({y2 for _, y2 in tiles.values()
+                       if (y2 > ty if dy > 0 else y2 < ty)},
+                      reverse=dy < 0)
+        if not rows:
+            return None
+        # weigh row distance against horizontal drift: a tile roughly
+        # above/below two rows away beats the far end of the next row
+        # (round SNAP: a vertical key must not yank the bee sideways)
+        best = None
+        for depth, ny in enumerate(rows[:3]):
+            for m, (x, y2) in tiles.items():
+                if y2 != ny:
+                    continue
+                # ties break toward column alignment: straight above
+                # beats equally-costed sideways
+                key = (depth * 2 + abs(x - tx) / max(1, tile_w),
+                       abs(x - tx))
+                if best is None or key < best[0]:
+                    best = (key, m)
+        return best[1]
 
     while True:
         _draw_map(pad, world, s, rooms, tiles, tile_w)
@@ -270,12 +343,10 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
                                curses.A_DIM | curses.color_pair(4))
                 except curses.error:
                     pass
-        here_m = tile_at(*bee)
+        here_m = cur
         # the bee perches BESIDE a tile's label, never on it (a panel saw
         # '@ire' where 'wire' should be - sprite and text fighting a cell)
-        bx, by = bee
-        if here_m:
-            bx = max(0, tiles[here_m][0] - 1)
+        bx, by = max(0, tiles[cur][0] - 1), tiles[cur][1]
         try:
             pad.addstr(by, bx, "@",
                        curses.A_BOLD | curses.color_pair(1))
@@ -289,8 +360,8 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
         scr.addstr(0, 0, hud[: maxx - 1], curses.A_REVERSE)
         scr.refresh()
         # viewport follows the bee
-        vy = max(0, min(bee[1] - (maxy - 4) // 2, height - (maxy - 3)))
-        vx = max(0, min(bee[0] - maxx // 2, 130 - maxx))
+        vy = max(0, min(by - (maxy - 4) // 2, height - (maxy - 3)))
+        vx = max(0, min(bx - maxx // 2, 130 - maxx))
         pad.refresh(max(0, vy), max(0, vx), 1, 0, maxy - 2, maxx - 1)
         marks, zone_open = _quest_marks(world, s)
         info = ""
@@ -304,15 +375,11 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
             info += (" - Enter travels, l looks" if here_m != s.here
                      else " - you are here (l looks)")
         elif here_m:
-            info = "an unseen tile - walk elsewhere or scout in the shell"
-        else:
-            room = next((z for z, (x, y, w, h) in rooms.items()
-                         if x <= bee[0] < x + w and y <= bee[1] < y + h),
-                        None)
-            n = zone_open.get(room, 0) if room else 0
-            info = (f"{n} open quest{'s' if n != 1 else ''} in this "
-                    f"district - 'e' lists them, ! tiles are named by them"
-                    if n else "")
+            n = zone_open.get(world.modules[here_m].zone, 0)
+            info = ("an unseen tile - Enter tries to travel, or scout "
+                    "in the shell"
+                    + (f" · {n} open quest{'s' if n != 1 else ''} in "
+                       f"this district" if n else ""))
         line = msg or whisper_line or info
         attr = (curses.color_pair(5) | curses.A_BOLD
                 if line.startswith("~") else curses.A_DIM)
@@ -325,48 +392,23 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
             return
         elif k in (curses.KEY_LEFT, ord("a"), curses.KEY_RIGHT, ord("d"),
                    curses.KEY_UP, ord("w"), curses.KEY_DOWN, ord("s")):
-            dx = (-2 if k in (curses.KEY_LEFT, ord("a"))
-                  else 2 if k in (curses.KEY_RIGHT, ord("d")) else 0)
+            dx = (-1 if k in (curses.KEY_LEFT, ord("a"))
+                  else 1 if k in (curses.KEY_RIGHT, ord("d")) else 0)
             dy = (-1 if k in (curses.KEY_UP, ord("w"))
                   else 1 if k in (curses.KEY_DOWN, ord("s")) else 0)
-            nx = max(1, min(127, bee[0] + dx))
-            ny = max(1, min(height, bee[1] + dy))
-            # walls block; doorways (the gap in each bottom wall) pass.
-            # a horizontal step is 2 columns wide, so test every swept
-            # column - landing checks alone let the bee hop OVER a wall
-            # whose column parity differs (round 18c: the right wall)
-            blocked = False
-            for zid, (x, y, w, h) in rooms.items():
-                for sx in range(min(bee[0], nx), max(bee[0], nx) + 1):
-                    if sx == bee[0] and ny == bee[1]:
-                        continue  # standing ground never blocks
-                    on_v = ny in (y, y + h - 1) and x <= sx <= x + w - 1
-                    on_h = sx in (x, x + w - 1) and y <= ny <= y + h - 1
-                    if on_v or on_h:
-                        door = x + w // 2
-                        if ny == y + h - 1 and door - 1 <= sx <= door:
-                            continue  # through the doorway
-                        blocked = True
-                        break
-                if blocked:
-                    break
-            if not blocked:
-                bee[0], bee[1] = nx, ny
-                # the tall-grass encounter: WALKING onto a known tile is
-                # what whispers, not traveling (round W1: gating on a
-                # successful 'go' meant most walks stayed silent)
-                stepped = tile_at(bee[0], bee[1])
-                if stepped != whisper_tile:
+            nxt = hop(cur, dx, dy)
+            if nxt:
+                cur = nxt
+                # the tall-grass encounter: every hop lands on a module,
+                # and a new one whispers (round W1)
+                if cur != whisper_tile:
                     whisper_line, whisper_tile = "", None
-                if stepped:
-                    whisper = _whisper(world, s, stepped)
-                    if whisper:
-                        whisper_line, whisper_tile = whisper, stepped
-                        save(s)
+                whisper = _whisper(world, s, cur)
+                if whisper:
+                    whisper_line, whisper_tile = whisper, cur
+                    save(s)
             else:
-                # a bump should say so - silent non-movement made the
-                # doorway hunt pure trial and error (round W1)
-                msg = "a wall - the doorways are the gaps in the walls"
+                msg = "the map ends here"
         elif k in (curses.KEY_ENTER, 10, 13) and here_m:
             try:
                 how = engine.go(world, s, here_m)
@@ -396,21 +438,7 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
                         title="quests here (answer them in the shell)"):
                 return
         elif k == ord("?"):
-            if _overlay(scr, [
-                "THE OVERWORLD - keys",
-                "",
-                "arrows / wasd   walk the bee across the hive",
-                "Enter           travel to the module tile under you",
-                "                (same rules as 'go': fog and seals apply)",
-                "l               spyglass the tile under you (look)",
-                "e               quests of the district you stand in",
-                "Q or ESC        back to the shell",
-                "",
-                "tiles: B boss · # bedrock · % gate · ~ swamp · o worker",
-                "bright = read · dim = seen · ·· = still under fog",
-                "",
-                "answers stay in the shell - the overworld is for roaming.",
-            ], title="help"):
+            if _overlay(scr, HELP_LINES, title="help"):
                 return
 
 
