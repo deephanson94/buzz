@@ -221,6 +221,17 @@ def _draw_map(pad, world: World, s: Session, rooms, tiles, tile_w=TILE_W):
                 pass
 
 
+def _drain(scr):
+    """Eat buffered input. Keys typed before a screen existed - during
+    launch, or while an overlay was up - must never replay into the map
+    (flushinp alone races a fast typist; settle, then drain)."""
+    scr.nodelay(True)
+    curses.napms(80)
+    while scr.getch() != -1:
+        pass
+    scr.nodelay(False)
+
+
 def _overlay(scr, lines, title=""):
     """Full-screen text overlay. Returns True if the player pressed
     Q/ESC (quit the whole overworld), False for a plain dismiss."""
@@ -246,14 +257,8 @@ def _overlay(scr, lines, title=""):
             top = max(0, top - 3)
         else:
             # keys queued while the overlay was up must NOT replay into
-            # the map - buffered arrows made hops look non-deterministic
-            # (round SNAP: 'one press moved 3 tiles'). flushinp alone
-            # races a fast typist; settle, then drain
-            scr.nodelay(True)
-            curses.napms(80)
-            while scr.getch() != -1:
-                pass
-            scr.nodelay(False)
+            # the map (round SNAP: 'one press moved 3 tiles')
+            _drain(scr)
             # Q/ESC means QUIT THE OVERWORLD, even from an overlay - both
             # round-18 scouts hung when an overlay swallowed their quit
             return k in (ord("Q"), 27)
@@ -294,6 +299,7 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
         save(s)
         if _overlay(scr, HELP_LINES, title="welcome to the overworld"):
             return
+    _drain(scr)  # input from before this screen existed is not input
 
     def hop(frm, dx, dy):
         """The next tile in a direction, or None at the map's edge.
