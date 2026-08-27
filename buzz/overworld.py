@@ -39,9 +39,13 @@ def compute_layout(world: World, width: int = 110):
     tile_w = _tile_w(world)
     rooms, tiles = {}, {}
     x, y, row_h = 2, 2, 0
+    # no room may be wider than the wrap width - a fat district must grow
+    # DOWN, not off the screen (owner's big-repo dogfood: borders wider
+    # than the terminal render as a wall of disconnected dashes)
+    max_cols = max(1, (width - ROOM_PAD * 2 - 2) // tile_w)
     for z in sorted(world.zones.values(), key=lambda z: z.order):
         n = max(1, len(z.members))
-        cols = max(2, int(n ** 0.5 * 1.4 + 0.99))
+        cols = min(max(2, int(n ** 0.5 * 1.4 + 0.99)), max_cols)
         rows = -(-n // cols)
         w = cols * tile_w + ROOM_PAD * 2
         h = rows * 2 + 3
@@ -265,6 +269,7 @@ def _overlay(scr, lines, title=""):
 
 def _main(scr, world: World, s: Session, save, sessions_dir=None):
     curses.curs_set(0)
+    _maxy, _maxx = scr.getmaxyx()
     curses.use_default_colors()
     for i, c in [(1, curses.COLOR_YELLOW), (2, curses.COLOR_BLUE),
                  (3, curses.COLOR_MAGENTA), (4, curses.COLOR_GREEN),
@@ -273,8 +278,13 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
             curses.init_pair(i, c, -1)
         except curses.error:
             pass
-    rooms, tiles, height, tile_w = compute_layout(world)
-    pad = curses.newpad(height + 4, 130)
+    # the map wraps to THIS terminal, and the pad is as wide as the map
+    # actually is - fixed 110/130 constants broke every repo whose rooms
+    # outgrew them (silent addstr failures ate whole border rows)
+    rooms, tiles, height, tile_w = compute_layout(
+        world, width=max(60, _maxx - 2))
+    map_w = max(x + w for x, y, w, h in rooms.values()) + 3
+    pad = curses.newpad(height + 4, max(map_w, _maxx + 1))
     # tile-snap movement (owner's call after rounds 18-W1 converged on
     # "navigation is tedious"): the bee is always ON a module tile, and
     # one keypress hops to the nearest tile in that direction - across
@@ -361,7 +371,7 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
         scr.refresh()
         # viewport follows the bee
         vy = max(0, min(by - (maxy - 4) // 2, height - (maxy - 3)))
-        vx = max(0, min(bx - maxx // 2, 130 - maxx))
+        vx = max(0, min(bx - maxx // 2, map_w - maxx))
         pad.refresh(max(0, vy), max(0, vx), 1, 0, maxy - 2, maxx - 1)
         marks, zone_open = _quest_marks(world, s)
         info = ""
@@ -388,6 +398,13 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
         scr.refresh()
 
         k = scr.getch()
+        if k == curses.KEY_RESIZE:
+            _maxy, _maxx = scr.getmaxyx()
+            rooms, tiles, height, tile_w = compute_layout(
+                world, width=max(60, _maxx - 2))
+            map_w = max(x + w for x, y, w, h in rooms.values()) + 3
+            pad = curses.newpad(height + 4, max(map_w, _maxx + 1))
+            continue  # cur is a module name, so the bee survives reflow
         if k in (ord("Q"), 27):
             return
         elif k in (curses.KEY_LEFT, ord("a"), curses.KEY_RIGHT, ord("d"),
