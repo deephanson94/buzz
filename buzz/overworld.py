@@ -77,7 +77,10 @@ HELP_LINES = [
     "",
     "tiles: ! quest starts here · B boss · # bedrock · % gate",
     "       ~ swamp · o worker · ·· still under fog",
+    "       b = a fellow scout's bee (another session, live)",
     "walking whispers one true fact per tile per session.",
+    "(Enter can refuse: fog and sealed tunnels gate travel - that",
+    "is the game, not an error. Roam free; travel is earned.)",
 ]
 
 
@@ -242,6 +245,15 @@ def _overlay(scr, lines, title=""):
         elif k in (curses.KEY_UP, ord("k")) and top > 0:
             top = max(0, top - 3)
         else:
+            # keys queued while the overlay was up must NOT replay into
+            # the map - buffered arrows made hops look non-deterministic
+            # (round SNAP: 'one press moved 3 tiles'). flushinp alone
+            # races a fast typist; settle, then drain
+            scr.nodelay(True)
+            curses.napms(80)
+            while scr.getch() != -1:
+                pass
+            scr.nodelay(False)
             # Q/ESC means QUIT THE OVERWORLD, even from an overlay - both
             # round-18 scouts hung when an overlay swallowed their quit
             return k in (ord("Q"), 27)
@@ -293,13 +305,26 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
             row = sorted((x, m) for m, (x, y2) in tiles.items() if y2 == ty)
             i = [m for _, m in row].index(frm) + (1 if dx > 0 else -1)
             return row[i][1] if 0 <= i < len(row) else None
-        beyond = [y2 for _, y2 in tiles.values()
-                  if (y2 > ty if dy > 0 else y2 < ty)]
-        if not beyond:
+        rows = sorted({y2 for _, y2 in tiles.values()
+                       if (y2 > ty if dy > 0 else y2 < ty)},
+                      reverse=dy < 0)
+        if not rows:
             return None
-        ny = min(beyond) if dy > 0 else max(beyond)
-        return min(((abs(x - tx), m) for m, (x, y2) in tiles.items()
-                    if y2 == ny))[1]
+        # weigh row distance against horizontal drift: a tile roughly
+        # above/below two rows away beats the far end of the next row
+        # (round SNAP: a vertical key must not yank the bee sideways)
+        best = None
+        for depth, ny in enumerate(rows[:3]):
+            for m, (x, y2) in tiles.items():
+                if y2 != ny:
+                    continue
+                # ties break toward column alignment: straight above
+                # beats equally-costed sideways
+                key = (depth * 2 + abs(x - tx) / max(1, tile_w),
+                       abs(x - tx))
+                if best is None or key < best[0]:
+                    best = (key, m)
+        return best[1]
 
     while True:
         _draw_map(pad, world, s, rooms, tiles, tile_w)
