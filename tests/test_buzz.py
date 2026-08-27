@@ -809,7 +809,8 @@ def test_flow_extraction_and_journey(tmp_path):
 
 def test_overworld_layout_pure(world):
     from buzz.overworld import compute_layout
-    rooms, tiles, height = compute_layout(world)
+    rooms, tiles, height, tile_w = compute_layout(world)
+    assert tile_w >= 14
     assert set(rooms) == set(world.zones)
     assert set(tiles) == set(world.modules)
     for m, (tx, ty) in tiles.items():
@@ -858,6 +859,9 @@ def test_wanted_daily(world):
     d2, t2 = wanted.pick(world, "2026-08-26")
     assert (date, target) == (d2, t2)          # deterministic
     assert target in world.modules
+    # play() hunts TODAY's fugitive - guesses must be relative to it, or
+    # this test loses a coin-flip whenever the calendar rolls over
+    _, target = wanted.pick(world)
     # the poster never names the fugitive
     assert all(target not in ln for ln in wanted.poster(world, target))
     xp0 = s.xp
