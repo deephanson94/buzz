@@ -105,7 +105,10 @@ def _try_next(world: World, s: Session) -> str:
     zone = world.modules[s.here].zone
     open_q = [q for q in world.questions.values()
               if q.zone == zone and q.id not in s.resolved
-              and (not q.boss or s.boss_open)]
+              and (not q.boss or s.boss_open)
+              # a place quest suggested by the district you occupy IS
+              # its answer (round c9: 'go defaults' -> 'try q27')
+              and q.qtype != "place"]
     if open_q:
         q = sorted(open_q, key=lambda q: q.xp)[0]
         return f"try next: buzz quest {q.id}"

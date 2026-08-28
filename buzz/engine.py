@@ -755,7 +755,17 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
             text = ("it is one of: " + ", ".join(_ghost_candidates(world, t))
                     + f"  (probe them: buzz probe {t['src']} <candidate>)")
         elif q.qtype == "place":
-            text = f"its highest-pagerank neighbor sits in {world.zones[t['zone']].name}"
+            # naming the district at L2 was the answer at half price
+            # (round c9); point at the neighbor, not the destination
+            nb2 = max((world.out_edges(t["module"]) +
+                       world.in_edges(t["module"])) or [],
+                      key=lambda e: world.modules[
+                          e.dst if e.src == t["module"] else e.src].pagerank,
+                      default=None)
+            other = ((nb2.dst if nb2.src == t["module"] else nb2.src)
+                     if nb2 else "its neighbors")
+            text = (f"probe its strongest neighbor, {other} - where that "
+                    f"one lives is where the vote points")
         elif q.qtype == "hub":
             zid = world.modules[t["module"]].zone
             top = sorted(world.zones[zid].members,

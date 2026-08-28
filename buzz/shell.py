@@ -8,6 +8,7 @@ from __future__ import annotations
 from .engine import GameError
 from .model import World, Session
 from .ui import paint
+from .render import known_zones as _rknown
 
 COMMANDS = [
     "map", "look", "edges", "go", "quests", "quest", "scout", "answer",
@@ -41,7 +42,7 @@ transports.trunkline.backend). Confused by a term? try: words
 
 
 def _hud(world: World, s: Session) -> str:
-    from .render import masked_modules, known_zones as _rknown
+    from .render import masked_modules
     zid = world.modules[s.here].zone
     # the HUD must not leak a zone the fog still masks (its place quest
     # is literally the question "which district is this?")

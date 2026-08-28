@@ -497,7 +497,8 @@ def render_atlas(world: World, s: Session) -> str:
         # the district is NAMED by the game's ONE naming predicate
         title = (z.name if z.id in render.known_zones(world, s)
                  else "??? unexplored district")
-        zq = [q for q in world.questions.values() if q.zone == z.id and not q.boss]
+        zq = [q for q in world.questions.values()
+              if q.zone == z.id and not q.boss and q.qtype != "place"]
         nboss = sum(1 for q in world.questions.values()
                     if q.zone == z.id and q.boss)
         done = sum(1 for q in zq if q.id in s.resolved)

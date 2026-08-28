@@ -70,7 +70,7 @@ def export(world: World, s: Session, out_dir: Path) -> tuple[Path, list[str]]:
     if unseen_zones or open_q:
         lines += ["", "## Where this survey stopped", ""]
         if unseen_zones:
-            lines.append("- Districts never reached: "
+            lines.append("- Districts still fully under fog: "
                          + ", ".join(sorted(unseen_zones)))
         if open_q:
             lines.append(f"- {open_q} quest(s) still open - `buzz play` "

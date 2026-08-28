@@ -160,7 +160,8 @@ def _quest_marks(world: World, s: Session):
     for q in world.questions.values():
         if q.id in s.resolved:
             continue
-        zone_open[q.zone] = zone_open.get(q.zone, 0) + 1
+        if q.qtype != "place":
+            zone_open[q.zone] = zone_open.get(q.zone, 0) + 1
         t = q.truth
         # ONE marker per quest - its starting point - so '!' keeps meaning
         # "begin here" (a scout found four marked tiles in one small room:
