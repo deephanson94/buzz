@@ -167,13 +167,20 @@ def _journeys_svg(world: World, s: Session) -> str:
             if i < len(path) - 1:
                 rec = next((c for c in world.calls if c["src"] == m
                             and c["dst"] == path[i + 1]), None)
-                fns = "/".join((rec.get("via") or ["?"])[:2]) if rec else "?"
+                via = (rec.get("via") or ["?"]) if rec else ["?"]
+                # ONE whole symbol - truncating an identifier and
+                # appending '()' fabricates a function that does not
+                # exist (round WEBATLAS: 'generate_task_()')
+                fn = via[0]
+                label = (fn if len(fn) <= 18 else fn[:17] + "…") + "()"
+                if len(via) > 1:
+                    label += " +" + str(len(via) - 1)
                 parts.append(f'<line x1="{x + w}" y1="{y}" x2="{x + w + 58}" '
                              f'y2="{y}" class="top" marker-end="url(#arr)"/>')
-                parts.append(f'<text x="{x + w + 29}" y="{y - 8}" '
+                parts.append(f'<text x="{x + w + 29}" y="{y - 22}" '
                              f'class="mlabel" style="font-size:9px" '
                              f'text-anchor="middle">'
-                             f'{html.escape(fns[:14])}()</text>')
+                             f'{html.escape(label)}</text>')
             x += w + 62
         coords = ";".join(f"{cx:.0f},{cy:.0f}" for cx, cy in stations)
         parts.append(f'<text x="{x + 6}" y="{y + 4}" class="play" '
@@ -182,8 +189,10 @@ def _journeys_svg(world: World, s: Session) -> str:
         y += 52
     return (f'<h1>THE JOURNEYS - how a run actually flows</h1>'
             f'<div class="legend">each solved journey becomes a sequence '
-            f'diagram: every arrow is a real function call. This is the '
-            f'runtime story the import map cannot tell.</div>'
+            f'diagram: every arrow is a real function call. Shown is ONE '
+            f'verified route per journey - the chain you answered with '
+            f'may be another equally real one. This is the runtime story '
+            f'the import map cannot tell.</div>'
             f'<svg viewBox="0 0 1500 {y}" xmlns="http://www.w3.org/2000/svg">'
             f'<defs><marker id="arr" markerWidth="8" markerHeight="8" '
             f'refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6" '
@@ -496,10 +505,13 @@ def render_atlas(world: World, s: Session) -> str:
             f"  {done}/{len(zq)} quests" if zq else "")
         if nboss and z.id not in s.cleared:
             badge += f" +{nboss} boss"
+        # truncation eats the NAME, never the payload - a cut quest
+        # count is disinformation, a cut name is just short
+        max_chars = max(8, (w - 20) // 8)
+        if len(title) + len(badge) > max_chars:
+            keep = max(4, max_chars - len(badge) - 1)
+            title = title[:keep] + "…"
         full = f"{title}{badge}"
-        max_chars = max(8, (w - 20) // 8)  # never overrun the box
-        if len(full) > max_chars:
-            full = full[: max_chars - 1] + "…"
         parts.append(
             f'<text x="{x + 12}" y="{y + 24}" class="ztitle">'
             f'{html.escape(full)}</text>')
@@ -523,11 +535,12 @@ def render_atlas(world: World, s: Session) -> str:
                 f'<text x="{cx}" y="{cy + dy}" class="mlabel">'
                 f'{html.escape(disp(m))}</text>')
             if m == s.here:
-                parts.append(f'<text x="{cx}" y="{cy - 15}" class="you">YOU</text>')
+                parts.append(f'<text x="{cx - 13}" y="{cy + 3}" '
+                             f'class="you" text-anchor="end">YOU</text>')
             if m in marks:
                 parts.append(f'<circle cx="{cx}" cy="{cy}" r="13" '
                              f'class="mark"/>')
-                parts.append(f'<text x="{cx + 12}" y="{cy - 10}" '
+                parts.append(f'<text x="{cx + 15}" y="{cy + 4}" '
                              f'class="bang">!</text>')
     if masked:
         overlay.append(

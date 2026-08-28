@@ -166,7 +166,10 @@ def zone_edges(world: World, zid: str, s: Session | None = None) -> list[str]:
     if cross:
         lines.append("cross-district edges touching it (all top-level; "
                      "answers often route through these):")
-        zone_of = {m: world.modules[m].zone for m in world.modules}
+        from .render import masked_modules
+        masked = masked_modules(world, s) if s is not None else set()
+        zone_of = {m: ("???" if m in masked else world.modules[m].zone)
+                   for m in world.modules}
         for e in sorted(cross, key=lambda e: (e.src, e.dst)):
             if e.src in members:
                 lines.append(f"  {e.src} -> {e.dst} [{zone_of.get(e.dst, '?')}]")
@@ -205,10 +208,15 @@ def who(world: World, name: str, s: Session | None = None) -> list[str]:
     kinds = {TOP: "top-level", LAZY: "function-level (sealed)",
              TYPE: "TYPE_CHECKING-only"}
     ins = world.in_edges(m)
+    from .render import masked_modules
+    masked = masked_modules(world, s) if s is not None else set()
     lines = [f"who imports {m} (whole hive, direct edges only):"]
     for e in sorted(ins, key=lambda e: (e.kind, e.src)):
         _name_seen(s, e.src)
-        z = world.modules[e.src].zone
+        # the zone tag of a module under an open place quest IS that
+        # quest's answer (round WEBATLAS: a scout solved q27 by copying
+        # it out of this very listing)
+        z = "???" if e.src in masked else world.modules[e.src].zone
         lines.append(f"  {e.src} [{z}]  ({kinds[e.kind]})")
     if not ins:
         lines.append("  nobody - it is a root or an entry point")

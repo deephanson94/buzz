@@ -34,6 +34,7 @@ applied between rounds. Passing bar: 8/10 on both.
 | W2c | exam + badges confirmation (junior) | **8.00** | **8.00** |
 | W3 | wanted poster + onboarding export (completionist, n=1) | 7.00 | 8.00 |
 | SNAP | tile-snap overworld movement (purpose scoring, n=2+2) | - | - |
+| WEB | interactive atlas (purpose scoring, n=2+3) | - | - |
 
 *Round 12 produced the program's deepest individual verdicts (an 8/9 and
 the first 9-learning score) alongside its lowest (4-continue from the
@@ -133,6 +134,31 @@ invalidates repeat tests - protocols must assert the precondition on
 screen, not assume it. Remaining known quirk, now explained on the
 card: on sparse rows a vertical hop drifts to the nearest tile, which
 can read as sideways movement.
+
+**WEB - the interactive atlas** (inspired by studying archify; ux +
+staff, then three staff audit rounds). The atlas grew pan/zoom, search,
+a route probe, journey playback, and quest markers - every interaction
+computed from the earned graph, verified by driving the page in
+headless Chromium. The staff audits were the program's deepest work:
+round 1 caught THE STRATA publishing the complete dependency-depth
+histogram at turn 0 and district names using 'seen' where the CLI uses
+'read'; round 2 confirmed those fixes airtight, then answered q13 by
+copying an unplaced module's district off its dossier - unplaced
+modules now live in a limbo strip whose coordinates feed every
+consumer (edges, search, probe); round 3 confirmed limbo end-to-end
+and caught journey labels FABRICATING function names by truncating
+identifiers before '()' - and, best of all, that the CLI itself leaks
+place answers: 'buzz who' and 'buzz edges' printed '[z4]' for unplaced
+modules (now masked to '[???]'). OPEN DESIGN ITEM, recorded not fixed:
+place quests list under their answer district in 'quests'/'quests all'
+(the listing's district IS the answer), and the arrival nudge points at
+them - closing it needs a design decision about where place quests
+live. Probe verdicts also verified: an earned-sight route that
+`buzz trace` confirms hop-for-hop, edge kinds carried into the chain
+text with a CAUTION on types-only hops. Methodology: the audit-fix-
+confirm loop ran three times because each confirmation found a NEW
+true bug - a sign the instrument works, and that visual surfaces need
+the same adversarial budget as mechanics.
 
 **Learning met the bar** (8.00 across four separate rounds, both repos;
 every claim graph-, git-, or source-checkable). **Continue peaked at 7.17
