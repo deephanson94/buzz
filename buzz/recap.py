@@ -78,7 +78,8 @@ def render_recap(world: World, s: Session) -> str:
             continue
         mark = {"correct": "", "partial": " (partially worked out)",
                 "revealed": " (revealed by the oracle)"}[status]
-        zone = world.zones[q.zone].name if q.zone in world.zones else q.zone
+        from .render import zone_label
+        zone = zone_label(world, s, q.zone)
         lines.append(f"- [{zone}] {fact}{mark}")
         lesson = q.lesson or LESSONS.get(q.qtype, "")
         if lesson and lesson not in seen_lessons:

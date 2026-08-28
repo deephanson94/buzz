@@ -515,7 +515,8 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
         z = resolve_zone(world, " ".join(args))
         correct = z == t["zone"]
         if not correct:
-            note = f"{world.zones[z].name} is not where it lives"
+            from .render import zone_label
+            note = f"{zone_label(world, s, z)} is not where it lives"
     elif q.verb == "point":
         if len(args) != 1:
             raise GameError("answer <module>")

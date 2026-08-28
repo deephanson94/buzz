@@ -41,7 +41,7 @@ transports.trunkline.backend). Confused by a term? try: words
 
 
 def _hud(world: World, s: Session) -> str:
-    from .render import masked_modules
+    from .render import masked_modules, known_zones as _rknown
     zid = world.modules[s.here].zone
     # the HUD must not leak a zone the fog still masks (its place quest
     # is literally the question "which district is this?")
@@ -81,8 +81,9 @@ def _completer_factory(world: World, s: Session):
             elif cmd in ("quest", "hint") and argn == 1:
                 cands = list(world.questions) + list(s.followups)
             elif cmd in ("scout", "edges", "quests"):
-                cands = list(world.zones) + [z.name for z in
-                                             world.zones.values()]
+                cands = list(world.zones) + [
+                z.name for z in world.zones.values()
+                if z.id in _rknown(world, s)]
             else:
                 # module names - only what the fog has already yielded
                 cands = sorted(s.seen)

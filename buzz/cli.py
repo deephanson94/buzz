@@ -263,8 +263,11 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
         m = world.modules[s.here]
         outs = world.out_edges(s.here)
         sealed = sum(1 for e in outs if e.kind == "lazy")
+        _at = ("??? (unplaced - its place quest knows)"
+               if s.here in render.masked_modules(world, s)
+               else render.zone_label(world, s, m.zone))
         print(f"[{how}] you arrive at {s.here} "
-              f"({world.zones[m.zone].name}, role: {m.role}) - "
+              f"({_at}, role: {m.role}) - "
               f"{len(outs)} out-edges"
               + (f", {sealed} sealed" if sealed else "")
               + ". 'buzz look' for detail.")
@@ -319,7 +322,7 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
                                 f"district id like z1")
             zid = world.modules[m].zone
             print(f"({m} is a module - scouting its district, "
-                  f"{world.zones[zid].name})")
+                  f"{render.zone_label(world, s, zid)})")
         gained = engine.scout(world, s, zid)
         masked = render.masked_modules(world, s)
         hidden_here = [m for m in world.zones[zid].members if m in masked]

@@ -180,7 +180,7 @@ def _draw_map(pad, world: World, s: Session, rooms, tiles, tile_w=TILE_W):
     marks, zone_open = _quest_marks(world, s)
     for z in sorted(world.zones.values(), key=lambda z: z.order):
         x, y, w, h = rooms[z.id]
-        known = any(m in seen for m in z.members)
+        known = z.id in render.known_zones(world, s)
         title = z.name if known else "??? unexplored"
         n_open = zone_open.get(z.id, 0)
         if n_open and known:

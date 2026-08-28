@@ -28,7 +28,29 @@ def known_zones(world: World, s: Session) -> set[str]:
     for q in world.questions.values():
         if q.qtype == "place" and q.id in s.resolved:
             known.add(q.truth["zone"])
+    # clearing a district is proof enough to learn its name
+    known |= set(s.cleared)
     return known
+
+
+def zone_label(world: World, s: Session, zid: str) -> str:
+    """THE way to print a district's name. Every surface calls this or
+    leaks (rounds c6-c8 found eight sites re-implementing the rule)."""
+    if zid not in world.zones:
+        return str(zid)
+    if zid in known_zones(world, s):
+        return world.zones[zid].name
+    return f"an unexplored district ({zid})"
+
+
+def mask_prose(world: World, s: Session, text: str) -> str:
+    """Substitute unearned district names out of any prose (quest
+    prompts and gists bake names in at generation time)."""
+    known = known_zones(world, s)
+    for z in world.zones.values():
+        if z.id not in known and z.name:
+            text = text.replace(z.name, f"district {z.id} (unexplored)")
+    return text
 
 
 def _mod_label(world: World, s: Session, m: str) -> str:
@@ -212,7 +234,7 @@ def render_quests(world: World, s: Session, zone_id: str) -> str:
             lock = f" [stage {q.truth['stage']}: sealed until the prior stage falls]"
         lines.append(f"  {q.id} [{_status_of(s, q.id)}] ({q.qtype}, {q.xp} XP){lock}")
         if not lock and q.id not in s.resolved:
-            lines.append(f"        {_gist(q.prompt)}")
+            lines.append(f"        {_gist(mask_prose(world, s, q.prompt))}")
     for f in fus:
         lines.append(f"  {f['id']} [{_status_of(s, f['id'])}] (follow-up, {f['xp']} XP)")
     lines.append("")
@@ -258,11 +280,7 @@ def render_question(world: World, s: Session, q) -> str:
     # generation bakes district names into quest prose; display is
     # where the fog lives (round c7: 'quest q26' named The Defaults
     # Atrium on a virgin session)
-    prompt = q.prompt
-    known = known_zones(world, s)
-    for z2 in world.zones.values():
-        if z2.id not in known and z2.name:
-            prompt = prompt.replace(z2.name, f"district {z2.id} (unexplored)")
+    prompt = mask_prose(world, s, q.prompt)
     lines = [f"[{q.id}] ({q.qtype}, {q.xp} XP, status: {st})", "", prompt,
              *([rule] if rule else []),
              *([evidence] if evidence else []), "",
