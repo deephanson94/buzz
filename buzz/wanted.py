@@ -42,9 +42,11 @@ def _size_band(loc: int) -> str:
     return "one of the hive's great halls"
 
 
-def poster(world: World, name: str) -> list[str]:
+def poster(world: World, name: str, s: Session = None) -> list[str]:
     m = world.modules[name]
-    zone = world.zones[m.zone].name
+    from .render import zone_label
+    zone = (zone_label(world, s, m.zone) if s is not None
+            else world.zones[m.zone].name)
     lines = [
         "WANTED - a fugitive module, description posted by the elders:",
         f"  last seen in {zone}.",
@@ -87,7 +89,7 @@ def play(world: World, s: Session, guess: str | None) -> list[str]:
                    f"A new poster goes up tomorrow.")
         return out
     if guess is None:
-        out += poster(world, target)
+        out += poster(world, target, s)
         for i in range(len(w["guesses"])):
             out.append("  " + clue(world, target, i + 1))
         left = MAX_GUESSES - len(w["guesses"])

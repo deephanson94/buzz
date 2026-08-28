@@ -67,7 +67,22 @@ def resolve_module(world: World, name: str) -> str:
             return sufx[0]
     if len(exact) > 1 or len(sufx) > 1:
         raise GameError(f"'{name}' is ambiguous: {', '.join(exact or sufx)}")
-    raise GameError(f"no module called '{name}' in this hive")
+    # the same sentence a FOGGED module gets: a miss must not confirm
+    # what exists (round c12 enumerated the fog by name-guessing)
+    raise GameError(f"'{name}' is not within your sight - the fog may "
+                    f"still hold it")
+
+
+def resolve_visible(world: World, s: Session, name: str) -> str:
+    """THE fog gate for user-typed names: resolves like resolve_module,
+    but an unseen module answers with the byte-identical refusal an
+    unknown name gets. Every verb that takes a module name must come
+    through here (round c13: seven verbs, seven different oracles)."""
+    m = resolve_module(world, name)
+    if s is not None and m not in s.seen:
+        raise GameError(f"'{name}' is not within your sight - the fog "
+                        f"may still hold it")
+    return m
 
 
 def resolve_zone(world: World, name: str) -> str:
@@ -95,13 +110,19 @@ def can_travel(world: World, s: Session, dst: str) -> tuple[bool, str]:
         # only blocks what no one has named yet
         return True, "scout-flight"
     if edge:
-        return False, (f"the tunnel from {s.here} to {dst} is SEALED - a "
-                       f"function-level import hiding its destination. Solve "
-                       f"a cycle quest to unlock tunnel-vision.")
-    return False, f"{dst} is still under fog - you have not seen it yet"
+        # never name the destination the seal exists to hide (c13: this
+        # sentence confirmed existence AND handed over the hidden edge)
+        return False, (f"a sealed tunnel leads out of {s.here} toward "
+                       f"somewhere unseen - a function-level import hides "
+                       f"its destination. Solve a cycle quest to unlock "
+                       f"tunnel-vision.")
+    return False, (f"'{dst}' is not within your sight - the fog may "
+                   f"still hold it")
 
 
 def go(world: World, s: Session, name: str) -> str:
+    # NB: can_travel handles seen/sealed nuance; resolve here stays
+    # permissive because its refusals below use the canonical sentence
     dst = resolve_module(world, name)
     ok, how = can_travel(world, s, dst)
     if not ok:
@@ -129,7 +150,8 @@ def peek(world: World, s: Session, name: str) -> str:
     there. Reading is discovering - it counts, it just doesn't move you."""
     m = resolve_module(world, name)
     if m != s.here and m not in s.seen:
-        raise GameError(f"{m} is still under fog - you have not seen it yet")
+        raise GameError(f"'{m}' is not within your sight - the fog may "
+                        f"still hold it")
     prev = s.here
     _arrive(world, s, m)
     s.here = prev
@@ -152,12 +174,25 @@ def zone_edges(world: World, zid: str, s: Session | None = None) -> list[str]:
     tally is withheld while the district's own hub quest is open (it would
     BE the answer); everywhere else the game does the counting for you."""
     members = set(world.zones[zid].members)
+    # a module under an OPEN place quest must not appear in a titled
+    # district's member list - membership IS that quest's answer (round
+    # WEBATLASc3 solved both place quests straight off this listing)
+    from .render import masked_modules
+    _masked = masked_modules(world, s) if s is not None else set()
+    withheld = members & _masked
+    members = members - withheld
     edges = [e for e in world.edges
              if e.kind == TOP and e.src in members and e.dst in members]
-    lines = [f"top-level import edges inside {world.zones[zid].name} ({zid}):"]
+    from .render import known_zones
+    zname = (world.zones[zid].name
+             if s is None or zid in known_zones(world, s)
+             else "??? (unexplored district)")
+    lines = [f"top-level import edges inside {zname} ({zid}):"]
     for e in sorted(edges, key=lambda e: (e.src, e.dst)):
         _name_seen(s, e.src, e.dst)
         lines.append(f"  {e.src} -> {e.dst}")
+    # NB: withheld edges get no note here - "N unplaced modules in THIS
+    # district" is the same leak in a different coat
     if not edges:
         lines.append("  (none - this district is held together by git "
                      "history and convention, not imports)")
@@ -166,8 +201,12 @@ def zone_edges(world: World, zid: str, s: Session | None = None) -> list[str]:
     if cross:
         lines.append("cross-district edges touching it (all top-level; "
                      "answers often route through these):")
-        zone_of = {m: world.modules[m].zone for m in world.modules}
+        from .render import masked_modules
+        masked = masked_modules(world, s) if s is not None else set()
+        zone_of = {m: ("???" if m in masked else world.modules[m].zone)
+                   for m in world.modules}
         for e in sorted(cross, key=lambda e: (e.src, e.dst)):
+            _name_seen(s, e.src, e.dst)  # printed = seen (c12 accounting)
             if e.src in members:
                 lines.append(f"  {e.src} -> {e.dst} [{zone_of.get(e.dst, '?')}]")
             else:
@@ -185,13 +224,17 @@ def zone_edges(world: World, zid: str, s: Session | None = None) -> list[str]:
         for e in edges:
             indeg[e.dst] = indeg.get(e.dst, 0) + 1
         top = sorted(indeg.items(), key=lambda kv: (-kv[1], kv[0]))
-        lines.append("in-district in-degree tally: "
+        lines.append("in-district in-degree tally (placed modules only): "
                      + ", ".join(f"{m} ({n})" for m, n in top))
     if quest_open("hotspot"):
         lines.append("(churn ranking withheld: this district's hotspot quest "
                      "is still open - that ranking IS the answer)")
     else:
         churn = sorted(members, key=lambda m: -world.modules[m].commits)[:8]
+        # a name this line prints is a name the session has seen - the
+        # rest of edges registers its names; this line skipped the
+        # bookkeeping (round c11's accounting mismatch)
+        _name_seen(s, *churn)
         lines.append("churn ranking (commits): "
                      + ", ".join(f"{m} ({world.modules[m].commits})"
                                  for m in churn))
@@ -201,15 +244,25 @@ def zone_edges(world: World, zid: str, s: Session | None = None) -> list[str]:
 def who(world: World, name: str, s: Session | None = None) -> list[str]:
     """Reverse imports of one module across the WHOLE hive, by edge kind -
     the fan-in view that per-module look can't give you."""
-    m = resolve_module(world, name)
+    m = resolve_visible(world, s, name)
     kinds = {TOP: "top-level", LAZY: "function-level (sealed)",
              TYPE: "TYPE_CHECKING-only"}
     ins = world.in_edges(m)
+    from .render import masked_modules
+    masked = masked_modules(world, s) if s is not None else set()
+    # if the QUERIED module's own placement is an open mystery, its
+    # importers' zone tags are the majority vote the hint ladder sells
+    # (round c10: 'who <unplaced>' was a one-command place-solve)
+    subject_masked = m in masked
     lines = [f"who imports {m} (whole hive, direct edges only):"]
     for e in sorted(ins, key=lambda e: (e.kind, e.src)):
         _name_seen(s, e.src)
-        z = world.modules[e.src].zone
+        z = ("???" if (e.src in masked or subject_masked)
+             else world.modules[e.src].zone)
         lines.append(f"  {e.src} [{z}]  ({kinds[e.kind]})")
+    if subject_masked and ins:
+        lines.append("  (zone tags withheld: this module's district is "
+                     "an open place quest - the tags would be the vote)")
     if not ins:
         lines.append("  nobody - it is a root or an entry point")
     lines.append("(transitive importers are not listed - chains are yours to walk)")
@@ -494,7 +547,8 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
         z = resolve_zone(world, " ".join(args))
         correct = z == t["zone"]
         if not correct:
-            note = f"{world.zones[z].name} is not where it lives"
+            from .render import zone_label
+            note = f"{zone_label(world, s, z)} is not where it lives"
     elif q.verb == "point":
         if len(args) != 1:
             raise GameError("answer <module>")
@@ -620,7 +674,10 @@ def _post_answer(world: World, s: Session, q: Question) -> None:
     for z in world.zones.values():
         if z.id in s.cleared:
             continue
-        zq = [x for x in world.questions.values() if x.zone == z.id and not x.boss]
+        # place quests are district-independent: filed under their
+        # answer, so they neither list in a district nor gate its clear
+        zq = [x for x in world.questions.values()
+              if x.zone == z.id and not x.boss and x.qtype != "place"]
         if zq and all(x.id in s.resolved for x in zq):
             s.cleared.append(z.id)
             s.log.append(f"zone cleared: {z.name}")
@@ -730,7 +787,17 @@ def hint(world: World, s: Session, qid: str) -> tuple[int, str]:
             text = ("it is one of: " + ", ".join(_ghost_candidates(world, t))
                     + f"  (probe them: buzz probe {t['src']} <candidate>)")
         elif q.qtype == "place":
-            text = f"its highest-pagerank neighbor sits in {world.zones[t['zone']].name}"
+            # naming the district at L2 was the answer at half price
+            # (round c9); point at the neighbor, not the destination
+            nb2 = max((world.out_edges(t["module"]) +
+                       world.in_edges(t["module"])) or [],
+                      key=lambda e: world.modules[
+                          e.dst if e.src == t["module"] else e.src].pagerank,
+                      default=None)
+            other = ((nb2.dst if nb2.src == t["module"] else nb2.src)
+                     if nb2 else "its neighbors")
+            text = (f"probe its strongest neighbor, {other} - where that "
+                    f"one lives is where the vote points")
         elif q.qtype == "hub":
             zid = world.modules[t["module"]].zone
             top = sorted(world.zones[zid].members,
@@ -820,10 +887,10 @@ def flow(world: World, s: Session, name: str) -> list[str]:
     """Who does this module CALL into at runtime, and who calls into it?
     Reading calls means reading the file, so it requires a module you have
     already read (visited or spyglassed)."""
-    m = resolve_module(world, name)
+    m = resolve_visible(world, s, name)
     if m not in s.discovered:
         raise GameError(f"you have not read {m} yet - 'buzz look {m}' "
-                        f"(if you can see it) or fly there first")
+                        f"or fly there first")
     outs = [c for c in world.calls if c["src"] == m]
     ins = [c for c in world.calls if c["dst"] == m]
     lines = [f"where {m}'s work goes (function calls, not just imports):"]
@@ -882,7 +949,7 @@ def chronicle(world: World, s: Session, name: str) -> list[str]:
     """The hive's records for one module: focused commits and reverts that
     touched it. Companion names are withheld while an open patch quest in
     that module's zone depends on them - the record IS that answer."""
-    m = resolve_module(world, name)
+    m = resolve_visible(world, s, name)
     zid = world.modules[m].zone
     patch_open = any(q.qtype == "patch" and q.zone == zid
                      and q.id not in s.resolved
@@ -923,6 +990,7 @@ def rank(world: World, s: Session) -> str:
 
 
 LESSONS = {
+    "journey": "runtime flow follows CALLS, not imports - the request's real path is the story the import map cannot tell",
     "walk": "transitive top-level chains carry breakage across modules that never name each other",
     "cycle": "a function-level import is often a deliberate cycle-breaker, not sloppiness",
     "region": "blast radius = reverse reachability over always-run imports only; chains ignore zone boundaries",

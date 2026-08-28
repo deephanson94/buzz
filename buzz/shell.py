@@ -8,6 +8,7 @@ from __future__ import annotations
 from .engine import GameError
 from .model import World, Session
 from .ui import paint
+from .render import known_zones as _rknown
 
 COMMANDS = [
     "map", "look", "edges", "go", "quests", "quest", "scout", "answer",
@@ -80,9 +81,14 @@ def _completer_factory(world: World, s: Session):
                 cands = VERBS
             elif cmd in ("quest", "hint") and argn == 1:
                 cands = list(world.questions) + list(s.followups)
+            elif cmd == "answer" and argn >= 3 and "place" in words:
+                cands = list(world.zones) + [
+                    z.name for z in world.zones.values()
+                    if z.id in _rknown(world, s)]
             elif cmd in ("scout", "edges", "quests"):
-                cands = list(world.zones) + [z.name for z in
-                                             world.zones.values()]
+                cands = list(world.zones) + [
+                z.name for z in world.zones.values()
+                if z.id in _rknown(world, s)]
             else:
                 # module names - only what the fog has already yielded
                 cands = sorted(s.seen)

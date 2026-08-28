@@ -34,6 +34,7 @@ applied between rounds. Passing bar: 8/10 on both.
 | W2c | exam + badges confirmation (junior) | **8.00** | **8.00** |
 | W3 | wanted poster + onboarding export (completionist, n=1) | 7.00 | 8.00 |
 | SNAP | tile-snap overworld movement (purpose scoring, n=2+2) | - | - |
+| WEB | interactive atlas (purpose scoring, n=2+3) | - | - |
 
 *Round 12 produced the program's deepest individual verdicts (an 8/9 and
 the first 9-learning score) alongside its lowest (4-continue from the
@@ -133,6 +134,83 @@ invalidates repeat tests - protocols must assert the precondition on
 screen, not assume it. Remaining known quirk, now explained on the
 card: on sparse rows a vertical hop drifts to the nearest tile, which
 can read as sideways movement.
+
+**WEB - the interactive atlas** (inspired by studying archify; ux +
+staff, then three staff audit rounds). The atlas grew pan/zoom, search,
+a route probe, journey playback, and quest markers - every interaction
+computed from the earned graph, verified by driving the page in
+headless Chromium. The staff audits were the program's deepest work:
+round 1 caught THE STRATA publishing the complete dependency-depth
+histogram at turn 0 and district names using 'seen' where the CLI uses
+'read'; round 2 confirmed those fixes airtight, then answered q13 by
+copying an unplaced module's district off its dossier - unplaced
+modules now live in a limbo strip whose coordinates feed every
+consumer (edges, search, probe); round 3 confirmed limbo end-to-end
+and caught journey labels FABRICATING function names by truncating
+identifiers before '()' - and, best of all, that the CLI itself leaks
+place answers: 'buzz who' and 'buzz edges' printed '[z4]' for unplaced
+modules (now masked to '[???]'). OPEN DESIGN ITEMS: (a) FIXED in round c4's wake -
+place quests are now district-independent: they list in 'quests all'
+as '(unplaced - its district IS the answer)', never in a district's
+own listing, and never gate a zone's clear; 'quests all' also masks
+the names of districts with no read member (a virgin session's first
+command had been solving both place quests and reading five district
+names off one listing); (b) round c3's deepest finding - 'buzz edges <zone>' plus
+'buzz who' supply enough free graph that a full clear needed only
+9/44 files read: the fog never bound the player. Deciding how much
+graph those tools give away for free is a difficulty-model question,
+not a bug fix; (c) a district can be *CLEARED* while still named
+'??? unexplored' (all its quests solved without a visit) - decide
+whether clearing should name it; (d) the post-answer nudge reasons
+from the standing zone, not the solved quest's zone; (e1, from round c11, FIXED) quest ids were zone-contiguous
+generation ordinals - the id NUMBER alone identified a place quest's
+hidden district (18/19 blind placements across six worlds). Ids are
+now a deterministic sha-seeded permutation assigned at world-pin
+time, references remapped, locked by a regression test. NOTE: worlds
+must be re-analyzed to get shuffled ids; old world.json files keep
+the oracle. (e2, NEW from round c10) an intermittent LOST WRITE: one correct
+answer printed its full CORRECT banner and zone-clear yet nothing
+persisted - re-running the identical command banked it. Not
+reproduced in three targeted attempts; suspect concurrent one-shot
+invocations racing the session file (last-writer-wins). Needs file
+locking or write-then-rename with a version check - this silently
+deletes a solve, the inverse of rule 4. Also recorded from c10:
+FULL CLEAR banner overclaims ('every district mapped' with two
+districts unentered), the boss-lair map nudge outlives the boss, and
+the streak display is illegible after a hinted solve. (e) round c6's
+design critique of the place quest TYPE: its answer is a majority
+vote over buzz's own Louvain partition ('which cluster did the
+partitioner assign this to'), and hint 1 says as much - unlike gate or
+walk quests it may not teach judgement that transfers. Candidate v2:
+retire place as a quest type or re-ground it in something the repo
+itself asserts (package paths, imports-majority stated as such). Probe verdicts also verified: an earned-sight route that
+`buzz trace` confirms hop-for-hop, edge kinds carried into the chain
+text with a CAUTION on types-only hops. Methodology: the audit-fix-
+confirm loop ran three times because each confirmation found a NEW
+true bug - a sign the instrument works, and that visual surfaces need
+the same adversarial budget as mechanics.
+
+**The WEB audit chain, closed** (rounds c1-c14, one scout persona,
+fourteen rounds, ten oracles found and ten sealed against the
+finder's own repros). What began as an interactive-atlas review
+became the program's deepest security audit of the game's own
+information economy. The arc: per-surface leaks (strata histogram,
+district naming, dossiers) -> derived-count oracles (denominators,
+fog deltas) -> the naming predicate (known_zones), the label
+chokepoint (zone_label), prose masking (mask_prose) -> the primary
+key itself (zone-ordinal quest ids, now sha-permuted) -> the
+resolution layer (resolve_visible: seven verbs, one refusal
+sentence). Closing verdict (c14): 'ship - the audited fixes hold
+exactly as claimed... log the edges-driven full-map surveyed reveal
+to FINDINGS as the fog model's real remaining soft spot rather than
+blocking.' That soft spot is open item (b) with numbers: seven free
+`edges` calls take surveyed 6/44 -> 44/44 pre-quest, unlocking
+look/go/who/chronicle on the whole board; only flow's read-gate and
+the place-quest masks resist. The chain's meta-lesson for the
+methodology: an invariant is not a set of patched surfaces - it
+needs one enforcement point per CLASS of output (names, prose,
+counts, resolution), and a confirmation round that keeps finding new
+true bugs is the instrument working, not failing.
 
 **Learning met the bar** (8.00 across four separate rounds, both repos;
 every claim graph-, git-, or source-checkable). **Continue peaked at 7.17

@@ -157,7 +157,9 @@ def test_sealed_tunnel_blocked(world):
     # place player at core; render is lazy target -> sealed
     engine._arrive(world, s, "core")
     ok, why = engine.can_travel(world, s, "render")
-    assert not ok and "SEALED" in why
+    # the refusal must neither name the destination nor confirm the
+    # edge's endpoint (round c13: the old message handed both over)
+    assert not ok and "sealed tunnel" in why and "render" not in why
     s.abilities.append(engine.TUNNEL)
     ok, _ = engine.can_travel(world, s, "render")
     assert ok
@@ -1015,3 +1017,75 @@ def test_badges_earned(world):
     assert "Clean Sweep" not in [n for n, _ in earned(world, s)]
     s.resolved = {q: "correct" for q in world.questions}
     assert "Clean Sweep" in [n for n, _ in earned(world, s)]
+
+
+def test_atlas_interactive_fog_safe(world):
+    from buzz.atlas import render_atlas
+    s = engine.new_session(world)
+    page = render_atlas(world, s)
+    # the interactive layer ships
+    for needle in ("PROBE ROUTE", "var NODES=", "var EDGES=", "#town"):
+        assert needle in page
+    # fog: no unseen module's name reaches the file, in data or markup
+    unseen = set(world.modules) - set(s.seen)
+    for m in unseen:
+        assert f'"{m}"' not in page and f">{m}<" not in page
+    # edges are earned: only sources the session has READ are embedded
+    import json as _json, re
+    edges = _json.loads(re.search(r"var EDGES=(\[.*?\]);", page).group(1))
+    assert all(src in s.discovered for src, _dst, _k in edges)
+    assert all(dst in s.seen for _src, dst, _k in edges)
+
+
+def test_known_zones_one_predicate(world):
+    from buzz.render import known_zones, masked_modules
+    s = engine.new_session(world)
+    pq = next((q for q in world.questions.values() if q.qtype == "place"),
+              None)
+    if pq is None:
+        pytest.skip("fixture has no place quest")
+    target, zid = pq.truth["module"], pq.truth["zone"]
+    # sighting and even READING the masked module must not unlock the
+    # name of the district it secretly belongs to (round c6's oracle)
+    s.seen.append(target)
+    s.discovered.append(target)
+    assert target in masked_modules(world, s)
+    assert zid not in known_zones(world, s)
+    # solving the place quest names the district - one write, every
+    # surface reads the same predicate
+    s.resolved[pq.id] = "correct"
+    assert zid in known_zones(world, s)
+
+
+def test_quest_ids_carry_no_zone_information(world, tmp_path):
+    # regeneration is deterministic: same repo, same ids
+    from buzz.analyze import analyze
+    from buzz.questions import generate_questions
+    import pathlib
+    w2 = analyze(pathlib.Path(world.repo))
+    generate_questions(w2)
+    # cross-run id equality is verified on real repos (three byte-
+    # identical analyzes in round c12); the synthetic fixture's
+    # same-second commits can reorder archaeology, so here we assert
+    # the shuffle is a proper permutation, not run-stable
+    assert sorted(int(q[1:]) for q in w2.questions) == \
+        list(range(1, len(w2.questions) + 1))
+    # every stored reference survived the shuffle
+    for q in world.questions.values():
+        if q.truth.get("prev_stage"):
+            assert q.truth["prev_stage"] in world.questions
+        if q.followup_of:
+            assert q.followup_of in world.questions
+    # ids in numeric order must NOT walk the zones in generation order
+    # (zone-contiguous id runs were a turn-zero place-quest oracle);
+    # with 2+ zones and 4+ quests the odds a random permutation stays
+    # perfectly zone-contiguous are negligible for real worlds - assert
+    # only when the fixture is big enough to make the check meaningful
+    qs = sorted(world.questions.values(), key=lambda q: int(q.id[1:]))
+    zones_in_id_order = [q.zone for q in qs]
+    runs = 1 + sum(1 for a, b in zip(zones_in_id_order,
+                                     zones_in_id_order[1:]) if a != b)
+    distinct = len(set(zones_in_id_order))
+    if len(qs) >= 8 and distinct >= 3:
+        assert runs > distinct, (
+            "ids form zone-contiguous runs - the id number is an oracle")

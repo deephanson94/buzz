@@ -105,7 +105,10 @@ def _try_next(world: World, s: Session) -> str:
     zone = world.modules[s.here].zone
     open_q = [q for q in world.questions.values()
               if q.zone == zone and q.id not in s.resolved
-              and (not q.boss or s.boss_open)]
+              and (not q.boss or s.boss_open)
+              # a place quest suggested by the district you occupy IS
+              # its answer (round c9: 'go defaults' -> 'try q27')
+              and q.qtype != "place"]
     if open_q:
         q = sorted(open_q, key=lambda q: q.xp)[0]
         return f"try next: buzz quest {q.id}"
@@ -114,13 +117,19 @@ def _try_next(world: World, s: Session) -> str:
            and any(q.zone == z.id and q.id not in s.resolved
                    for q in world.questions.values())]
     if nxt:
-        target = max(nxt[0].members, key=lambda m: world.modules[m].pagerank)
+        from .render import known_zones
+        nname = (nxt[0].name if nxt[0].id in known_zones(world, s)
+                 else f"an unexplored district ({nxt[0].id})")
+        from .render import masked_modules as _mm
+        placed = [m for m in nxt[0].members
+                  if m not in _mm(world, s)] or nxt[0].members
+        target = max(placed, key=lambda m: world.modules[m].pagerank)
         if target not in s.seen:
             # never suggest a command that will bounce off the fog
             s.seen.append(target)
             return (f"this zone is done - your scouts point the way to "
-                    f"{nxt[0].name}: buzz go {target}")
-        return (f"this zone is done - head for {nxt[0].name} "
+                    f"{nname}: buzz go {target}")
+        return (f"this zone is done - head for {nname} "
                 f"(e.g. buzz go {target}, or explore with buzz map)")
     return "all zones cleared - buzz status"
 
@@ -260,8 +269,11 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
         m = world.modules[s.here]
         outs = world.out_edges(s.here)
         sealed = sum(1 for e in outs if e.kind == "lazy")
+        _at = ("??? (unplaced - its place quest knows)"
+               if s.here in render.masked_modules(world, s)
+               else render.zone_label(world, s, m.zone))
         print(f"[{how}] you arrive at {s.here} "
-              f"({world.zones[m.zone].name}, role: {m.role}) - "
+              f"({_at}, role: {m.role}) - "
               f"{len(outs)} out-edges"
               + (f", {sealed} sealed" if sealed else "")
               + ". 'buzz look' for detail.")
@@ -269,14 +281,26 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
     elif cmd == "quests":
         if rest and rest[0] == "all":
             print("every quest in the hive (id / type / XP / zone / status):")
-            for z in sorted(world.zones.values(), key=lambda z: z.order):
-                for q in sorted((q for q in world.questions.values()
-                                 if q.zone == z.id),
-                                key=lambda q: (q.boss, q.id)):
-                    st = s.resolved.get(q.id, "open")
-                    boss = " [BOSS]" if q.boss else ""
-                    print(f"  {q.id:5} {q.qtype:8} {q.xp:>3}xp  "
-                          f"{z.name}{boss}  [{st}]")
+            from .render import known_zones as _kz
+            _known = _kz(world, s)
+            # ID order, not zone order: rows grouped by district read as
+            # a roster of every fogged zone (round c12); ids are a
+            # sha-seeded permutation, so id order carries nothing
+            deferred = []
+            for q in sorted(world.questions.values(),
+                            key=lambda q: int(q.id[1:])):
+                st = s.resolved.get(q.id, "open")
+                boss = " [BOSS]" if q.boss else ""
+                if q.qtype == "place" and st == "open":
+                    deferred.append(q)
+                    continue
+                zname = (world.zones[q.zone].name
+                         if q.zone in _known else "???")
+                print(f"  {q.id:5} {q.qtype:8} {q.xp:>3}xp  "
+                      f"{zname}{boss}  [{st}]")
+            for q in sorted(deferred, key=lambda q: int(q.id[1:])):
+                print(f"  {q.id:5} {q.qtype:8} {q.xp:>3}xp  "
+                      f"(unplaced - its district IS the answer)  [open]")
         elif rest:
             print(render.render_quests(world, s, engine.resolve_zone(world, rest[0])))
         else:
@@ -308,25 +332,25 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
                                 f"district id like z1")
             zid = world.modules[m].zone
             print(f"({m} is a module - scouting its district, "
-                  f"{world.zones[zid].name})")
+                  f"{render.zone_label(world, s, zid)})")
         gained = engine.scout(world, s, zid)
         masked = render.masked_modules(world, s)
         hidden_here = [m for m in world.zones[zid].members if m in masked]
         # name what was gained - EXCEPT place-quest targets: tying their
         # name to the district just scouted would hand over that answer
         namable = sorted(m for m in gained if m not in masked)
-        if gained:
-            print(f"your scouts report back: {len(gained)} new name(s) on "
-                  f"the map"
-                  + (f": {', '.join(namable)}" if namable else "")
-                  + "  (names only - fly there to read their imports)")
+        # report ONLY the namable count: '3 new names' listing 2 would
+        # betray that an unplaced module lives in this district, and a
+        # per-zone 'sightings stay unplaced here' note narrowed every
+        # place quest to one district for free (round WEBATLASc3)
+        if namable:
+            print(f"your scouts report back: {len(namable)} new name(s) "
+                  f"on the map: {', '.join(namable)}"
+                  f"  (names only - fly there to read their imports)")
         else:
-            print("your scouts report back: every name in this district "
-                  "was already on your map")
-        if hidden_here:
-            print(f"({len(hidden_here)} sighting(s) stay unplaced until "
-                  f"their place quest is solved - see 'unplaced sightings' "
-                  f"on the map)")
+            print("your scouts report back: nothing new to NAME in this "
+                  "district (unplaced sightings, if any, appear on the "
+                  "map without a district)")
     elif cmd == "answer":
         if len(rest) < 2:
             raise GameError("usage: buzz answer <id> [verb] <answer...> - "
@@ -408,8 +432,17 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
                 continue
             solved = sum(1 for v in other.resolved.values() if v == "correct")
             here = other.here
-            at = (world.zones[world.modules[here].zone].name
-                  if here in world.modules else "?")
+            # the district name is masked by what the VIEWING session
+            # has earned - a shared leaderboard was a turn-zero reveal
+            # of five district names (round c7)
+            from .render import known_zones as _kz2
+            _viewer_known = _kz2(world, s)
+            if here in world.modules:
+                _hz = world.modules[here].zone
+                at = (world.zones[_hz].name if _hz in _viewer_known
+                      else f"??? ({_hz})")
+            else:
+                at = "?"
             rows.append((other.xp, p.stem, engine.rank(world, other),
                          solved, len(other.resolved),
                          len(other.discovered), other.streak,
@@ -455,20 +488,28 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
                       f"'buzz quest <id>' to take them on")
     elif cmd == "atlas":
         from .atlas import write_atlas
-        p = write_atlas(world, s, game_dir() / "atlas.html")
+        # session-scoped file: two scouts sharing one hive must not
+        # clobber each other's render (a full-clear atlas was destroyed
+        # by a throwaway session's regenerate in round WEBATLAS)
+        sname = os.environ.get("BUZZ_SESSION", "default")
+        fname = "atlas.html" if sname == "default" else f"atlas-{sname}.html"
+        p = write_atlas(world, s, game_dir() / fname)
         print(f"atlas rendered: {p.resolve()}")
         print("open it in a browser; regenerate after moving")
     elif cmd == "recap":
         from .recap import render_recap
         text = render_recap(world, s)
-        p = game_dir() / "field_notes.md"
+        sname = os.environ.get("BUZZ_SESSION", "default")
+        fname = ("field_notes.md" if sname == "default"
+                 else f"field_notes-{sname}.md")
+        p = game_dir() / fname
         p.write_text(text)
         print(text)
         print(f"\n(saved to {p.resolve()})")
     elif cmd == "trace":
         if len(rest) < 2:
             raise GameError("usage: buzz trace <module> <module> [module ...]")
-        mods = [engine.resolve_module(world, x) for x in rest]
+        mods = [engine.resolve_visible(world, s, x) for x in rest]
         print("\n".join(engine.trace(world, s, mods)))
     elif cmd == "chronicle":
         if not rest:
@@ -486,9 +527,9 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
     elif cmd == "probe":
         if len(rest) < 2:
             raise GameError("usage: buzz probe <module> <suspect> [suspect ...]")
-        a = engine.resolve_module(world, rest[0])
+        a = engine.resolve_visible(world, s, rest[0])
         for other in rest[1:]:
-            b = engine.resolve_module(world, other)
+            b = engine.resolve_visible(world, s, other)
             engine._name_seen(s, a, b)
             print(f"[{a} x {b}]")
             print(engine.probe(world, a, b))
@@ -515,8 +556,11 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
             print(paint("RECALLED." if r["ok"] else "slipped away.",
                         "green" if r["ok"] else "yellow"))
             if not r["ok"]:
-                print(f"  it was: {r['truth']}  (you proved this once - "
-                      f"'buzz quest {r['q'].id}' re-reads it)")
+                # 'you proved this once' asserted a canonical chain as
+                # the player's own - several chains can be equally true
+                print(f"  one correct answer: {r['truth']}  (yours may "
+                      f"have been another - 'buzz quest {r['q'].id}' "
+                      f"re-reads it)")
             if r["done"]:
                 print(f"\nexam over: {r['pct']}% retention "
                       f"({len(s.exam['correct'])}/{r['total']}) - "

@@ -61,14 +61,16 @@ def export(world: World, s: Session, out_dir: Path) -> tuple[Path, list[str]]:
     ]
     # where this survey stopped - so the next scout continues instead of
     # restarting (wave-3 audit: a raw percentage is not a handover)
-    unseen_zones = [z.name for z in world.zones.values()
+    from .render import zone_label
+    unseen_zones = [zone_label(world, s, z.id)
+                    for z in world.zones.values()
                     if not any(m in set(s.seen) for m in z.members)]
     open_q = sum(1 for q in world.questions.values()
                  if q.id not in s.resolved)
     if unseen_zones or open_q:
         lines += ["", "## Where this survey stopped", ""]
         if unseen_zones:
-            lines.append("- Districts never reached: "
+            lines.append("- Districts still fully under fog: "
                          + ", ".join(sorted(unseen_zones)))
         if open_q:
             lines.append(f"- {open_q} quest(s) still open - `buzz play` "

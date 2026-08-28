@@ -14,6 +14,48 @@ def masked_modules(world: World, s: Session) -> set[str]:
             if q.qtype == "place" and q.id not in s.resolved}
 
 
+def known_zones(world: World, s: Session) -> set[str]:
+    """The ONE predicate for 'may this district's name be printed'.
+    Round c6's oracle: any per-surface variant of this test eventually
+    disagrees with another and the disagreement is an answer. A zone's
+    name is known iff a PLACED member has been read (a placement-masked
+    module must not unlock its own hidden district - 'look' on it says
+    '???' and used to flip the map), or its place quest is resolved
+    (the player proved, or was shown, the placement)."""
+    masked = masked_modules(world, s)
+    known = {world.modules[m].zone for m in s.discovered
+             if m in world.modules and m not in masked}
+    for q in world.questions.values():
+        if q.qtype == "place" and (q.id in s.resolved
+                                   or s.hints.get(q.id, 0) >= 3):
+            # resolved, or the oracle's level-3 hint said it out loud -
+            # the map must not pretend otherwise (round c10)
+            known.add(q.truth["zone"])
+    # clearing a district is proof enough to learn its name
+    known |= set(s.cleared)
+    return known
+
+
+def zone_label(world: World, s: Session, zid: str) -> str:
+    """THE way to print a district's name. Every surface calls this or
+    leaks (rounds c6-c8 found eight sites re-implementing the rule)."""
+    if zid not in world.zones:
+        return str(zid)
+    if zid in known_zones(world, s):
+        return world.zones[zid].name
+    return f"an unexplored district ({zid})"
+
+
+def mask_prose(world: World, s: Session, text: str) -> str:
+    """Substitute unearned district names out of any prose (quest
+    prompts and gists bake names in at generation time)."""
+    known = known_zones(world, s)
+    for z in world.zones.values():
+        if z.id not in known and z.name:
+            text = text.replace(z.name, f"district {z.id} (unexplored)")
+    return text
+
+
 def _mod_label(world: World, s: Session, m: str) -> str:
     glyph = ROLE_GLYPH.get(world.modules[m].role, "")
     here = " <YOU>" if m == s.here else ""
@@ -38,7 +80,8 @@ def render_map(world: World, s: Session) -> str:
     unplaced = sorted(m for m in masked if m in s.seen)
     for z in sorted(world.zones.values(), key=lambda z: z.order):
         vis = [m for m in z.members if m in s.seen and m not in masked]
-        zq = [q for q in world.questions.values() if q.zone == z.id and not q.boss]
+        zq = [q for q in world.questions.values()
+              if q.zone == z.id and not q.boss and q.qtype != "place"]
         done = sum(1 for q in zq if q.id in s.resolved)
         n_boss = sum(1 for q in world.questions.values()
                      if q.zone == z.id and q.boss)
@@ -46,8 +89,8 @@ def render_map(world: World, s: Session) -> str:
                   else " (side content - no quests)" if not zq
                   else f"  quests {done}/{len(zq)}"
                   + (f" +{n_boss} boss" if n_boss else ""))
-        known = z.id in {world.modules[m].zone for m in s.discovered}
-        title = z.name if known else "??? (unexplored district)"
+        title = (z.name if z.id in known_zones(world, s)
+                 else "??? (unexplored district)")
         lines.append(f"[{z.id}] {title}{status}")
         if z.id in s.cleared and s.here not in z.members:
             # cleared districts collapse to keep the growing map legible
@@ -60,7 +103,8 @@ def render_map(world: World, s: Session) -> str:
             for m in sorted(vis, key=lambda m: -world.modules[m].pagerank):
                 row.append("  " + _mod_label(world, s, m))
             lines.extend(row)
-        hidden = len([m for m in z.members if m not in s.seen])
+        hidden = len([m for m in z.members
+                      if m not in s.seen and m not in masked])
         if hidden:
             lines.append(f"  ... and {hidden} module(s) under fog")
         lines.append("")
@@ -71,7 +115,12 @@ def render_map(world: World, s: Session) -> str:
     if not s.boss_open:
         lines.append(f"(boss quests are sealed until {boss_needed(world)} zones are cleared)")
     else:
-        lines.append("!! the BOSS LAIR is open - see 'buzz quests' in the boss zone")
+        _boss_qs = [q for q in world.questions.values() if q.boss]
+        if _boss_qs and all(q.id in s.resolved for q in _boss_qs):
+            pass  # the boss has fallen - status carries that story
+        else:
+            lines.append("!! the BOSS LAIR is open - see 'buzz quests' "
+                         "in the boss zone")
     return "\n".join(lines)
 
 
@@ -93,9 +142,20 @@ def _source_peek(world: World, m) -> list[str]:
             break
     # column-0 lines only: indented (function-level / TYPE_CHECKING) imports
     # stay hidden, same as the fog rules
+    # AST-verified: an unindented docstring line reading 'from the
+    # actual socket...' scraped in as an import (round c12) - an
+    # evidence panel must never render prose as a verified edge
+    import ast as _ast
+    try:
+        _tree = _ast.parse(text)
+        _import_lines = {n.lineno for n in _ast.walk(_tree)
+                         if isinstance(n, (_ast.Import, _ast.ImportFrom))
+                         and getattr(n, "col_offset", 1) == 0}
+    except SyntaxError:
+        _import_lines = set()
     all_imports = [f"  {i}: {raw[:76]}{'...' if len(raw) > 76 else ''}"
                    for i, raw in enumerate(text.splitlines(), 1)
-                   if raw.startswith(("import ", "from "))]
+                   if i in _import_lines]
     if all_imports:
         lines.append("  top-of-file import lines (verbatim, relative and "
                      "absolute forms are the same edge):")
@@ -171,12 +231,18 @@ def _status_of(s: Session, qid: str) -> str:
 
 def render_quests(world: World, s: Session, zone_id: str) -> str:
     z = world.zones[zone_id]
-    qs = [q for q in world.questions.values() if q.zone == zone_id]
+    zname = (z.name if zone_id in known_zones(world, s)
+             else "??? (unexplored district)")
+    qs = [q for q in world.questions.values() if q.zone == zone_id
+          # place quests are district-independent (filed under their
+          # answer): they list in 'quests all', never here, and never
+          # count toward this district's clear
+          and q.qtype != "place"]
     fus = [q for q in s.followups.values() if q["zone"] == zone_id]
     nb = [q for q in qs if not q.boss]
     done = sum(1 for q in nb if q.id in s.resolved)
     n_boss = len(qs) - len(nb)
-    lines = [f"quests in {z.name} ({z.id}) - {done}/{len(nb)} resolved"
+    lines = [f"quests in {zname} ({z.id}) - {done}/{len(nb)} resolved"
              + (f" (+{n_boss} boss quest(s) listed below)" if n_boss else "")
              + (" *CLEARED*" if zone_id in s.cleared else "") + ":"]
     for q in sorted(qs, key=lambda q: (q.boss, q.truth.get("stage", 0), q.id)):
@@ -187,7 +253,7 @@ def render_quests(world: World, s: Session, zone_id: str) -> str:
             lock = f" [stage {q.truth['stage']}: sealed until the prior stage falls]"
         lines.append(f"  {q.id} [{_status_of(s, q.id)}] ({q.qtype}, {q.xp} XP){lock}")
         if not lock and q.id not in s.resolved:
-            lines.append(f"        {_gist(q.prompt)}")
+            lines.append(f"        {_gist(mask_prose(world, s, q.prompt))}")
     for f in fus:
         lines.append(f"  {f['id']} [{_status_of(s, f['id'])}] (follow-up, {f['xp']} XP)")
     lines.append("")
@@ -230,7 +296,11 @@ def render_question(world: World, s: Session, q) -> str:
         # instead of buried in help (a panel found it too late)
         evidence = (f"evidence: 'buzz edges {q.zone}' dumps this district's "
                     f"import edges, tallied")
-    lines = [f"[{q.id}] ({q.qtype}, {q.xp} XP, status: {st})", "", q.prompt,
+    # generation bakes district names into quest prose; display is
+    # where the fog lives (round c7: 'quest q26' named The Defaults
+    # Atrium on a virgin session)
+    prompt = mask_prose(world, s, q.prompt)
+    lines = [f"[{q.id}] ({q.qtype}, {q.xp} XP, status: {st})", "", prompt,
              *([rule] if rule else []),
              *([evidence] if evidence else []), "",
              f"answer syntax: {syntax}",
@@ -346,6 +416,8 @@ exploring (free, no XP):
   buzz chronicle <module>      the module's focused commits and reverts
                                from git history
   buzz who <module>            who imports it, across the whole hive
+  buzz flow <module>           where a read file's work GOES at runtime
+                               (real calls - the evidence for journeys)
   buzz atlas                   render the hive as a visual map (HTML file
                                with real fog-of-war - open in a browser)
   buzz notes                   the transferable lessons banked so far,
