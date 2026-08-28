@@ -190,6 +190,28 @@ confirm loop ran three times because each confirmation found a NEW
 true bug - a sign the instrument works, and that visual surfaces need
 the same adversarial budget as mechanics.
 
+**The WEB audit chain, closed** (rounds c1-c14, one scout persona,
+fourteen rounds, ten oracles found and ten sealed against the
+finder's own repros). What began as an interactive-atlas review
+became the program's deepest security audit of the game's own
+information economy. The arc: per-surface leaks (strata histogram,
+district naming, dossiers) -> derived-count oracles (denominators,
+fog deltas) -> the naming predicate (known_zones), the label
+chokepoint (zone_label), prose masking (mask_prose) -> the primary
+key itself (zone-ordinal quest ids, now sha-permuted) -> the
+resolution layer (resolve_visible: seven verbs, one refusal
+sentence). Closing verdict (c14): 'ship - the audited fixes hold
+exactly as claimed... log the edges-driven full-map surveyed reveal
+to FINDINGS as the fog model's real remaining soft spot rather than
+blocking.' That soft spot is open item (b) with numbers: seven free
+`edges` calls take surveyed 6/44 -> 44/44 pre-quest, unlocking
+look/go/who/chronicle on the whole board; only flow's read-gate and
+the place-quest masks resist. The chain's meta-lesson for the
+methodology: an invariant is not a set of patched surfaces - it
+needs one enforcement point per CLASS of output (names, prose,
+counts, resolution), and a confirmation round that keeps finding new
+true bugs is the instrument working, not failing.
+
 **Learning met the bar** (8.00 across four separate rounds, both repos;
 every claim graph-, git-, or source-checkable). **Continue peaked at 7.17
 (round 10) and plateaued in the 6-7.2 band** with round-to-round noise of

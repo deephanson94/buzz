@@ -39,6 +39,19 @@ across three tiers (structure / decision / flow) + lore layer.
   the CLAUDE.md stuck-CI playbook (workflow_dispatch) worked as
   written.
 
+## Since the last handoff (the second long job)
+
+PRs #14-#16 merged earlier (adaptive tile width, tile-snap TUI
+movement with first-visit card, terminal-fit layout). Then the WEB
+chain: the atlas became an interactive instrument (pan/zoom, search,
+grounded route probe, journey playback) and its fourteen-round staff
+audit hardened the whole game's information economy - one naming
+predicate (render.known_zones), one label chokepoint
+(render.zone_label), one prose masker (render.mask_prose), one fog
+gate for name resolution (engine.resolve_visible), sha-permuted quest
+ids, place quests district-independent everywhere. Full story in
+FINDINGS ('The WEB audit chain, closed').
+
 ## Known open items (small, recorded in FINDINGS)
 
 - Exam "no tools" is an honor system (single process cannot enforce).
