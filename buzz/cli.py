@@ -85,10 +85,23 @@ def cmd_analyze(args: list[str]) -> None:
 
 def cmd_play() -> None:
     world = load_world()
+    # resume, never reset: 'play' used to new up a session unconditionally,
+    # so quitting the shell and typing 'buzz play' again silently wiped the
+    # whole run (found while making the tracked quest persist). Same fix
+    # the exam got: bare re-entry resumes; a fresh run is a new
+    # BUZZ_SESSION or a deleted session file.
+    from .ui import paint
+    if session_path().exists():
+        s = load_session(world)
+        print(paint(f"(resuming - XP {s.xp}, {len(s.resolved)} quest(s) "
+                    f"resolved. A FRESH run: export a new BUZZ_SESSION, or "
+                    f"delete {session_path()})", "dim"))
+        print(render.render_map(world, s))
+        print("\n" + _try_next(world, s))
+        return
     s = engine.new_session(world)
     s.save(session_path())
     name = world.repo.rsplit("/", 1)[-1]
-    from .ui import paint
     print(paint(f"THE HIVE: {name}", "gold"))
     print(f"""You are a scout bee in a dark codebase. Explore freely (always
 safe, always free); answer quests to earn XP and light up the map.
@@ -307,10 +320,21 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
             print(render.render_quests(world, s, world.modules[s.here].zone))
     elif cmd == "quest":
         if not rest:
-            raise GameError("usage: buzz quest <id>")
+            if not s.focus:
+                raise GameError("usage: buzz quest <id> - viewing a quest "
+                                "tracks it, then bare 'quest' reprints it")
+            rest = [s.focus]
         q = engine.get_question(world, s, rest[0])
         engine.reveal_prompt_modules(world, s, q)
         print(render.render_question(world, s, q))
+        # viewing an open quest tracks it: the id stays in the prompt, and
+        # bare hint/answer target it (dogfood: "after buzz edges I forgot
+        # the quest id I'm on")
+        if q.id not in s.resolved and s.focus != q.id:
+            s.focus = q.id
+            from .ui import paint
+            print(paint(f"(tracking {q.id} - bare 'hint' and "
+                        f"'answer <...>' now mean this quest)", "dim"))
     elif cmd == "scout":
         if not rest:
             raise GameError("usage: buzz scout <district>  (z1, z2, or a "
@@ -352,18 +376,32 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
                   "district (unplaced sightings, if any, appear on the "
                   "map without a district)")
     elif cmd == "answer":
-        if len(rest) < 2:
+        # the tracked quest makes the id optional: 'answer render' means
+        # 'answer <focused-id> render'. An explicit id always wins.
+        import re as _re
+        known = set(world.questions) | set(s.followups)
+        if rest and rest[0] in known:
+            qid, args = rest[0], rest[1:]
+        elif rest and _re.fullmatch(r"[qf]\d+", rest[0]):
+            # looks like a quest id but isn't one: a typo, not an answer
+            # for the tracked quest - never guess on the player's behalf
+            raise GameError(f"no quest called '{rest[0]}' - 'quests all' "
+                            f"lists every id")
+        elif rest and s.focus and s.focus in known:
+            qid, args = s.focus, rest
+        else:
             raise GameError("usage: buzz answer <id> [verb] <answer...> - "
                             "the verb (walk/edge/region/place/point) is "
-                            "optional; the quest already knows its own")
-        qid = rest[0]
+                            "optional; the quest already knows its own. "
+                            "(viewing a quest tracks it - then the id is "
+                            "optional too)")
         VERBS = ("walk", "edge", "region", "place", "point", "order")
-        if rest[1] in VERBS:
-            verb, params = rest[1], rest[2:]
+        if args and args[0] in VERBS:
+            verb, params = args[0], args[1:]
         else:
             # first dogfooder's question: "what does point even mean?" -
             # they shouldn't have to know. The quest knows its verb.
-            verb, params = engine.get_question(world, s, qid).verb, rest[1:]
+            verb, params = engine.get_question(world, s, qid).verb, args
         if not params:
             raise GameError("usage: buzz answer <id> [verb] <answer...>")
         pre_log = len(s.log)
@@ -414,6 +452,8 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
             else:
                 print(paint(f"* field note #{len(s.resolved)} recorded"
                             + (f" - {lesson}" if lesson else ""), "cyan"))
+        if s.focus == qid and qid in s.resolved:
+            s.focus = ""  # resolved: nothing to track until the next view
         for ev in s.log[pre_log:]:
             print(paint(f">>> {ev.upper()} <<<", "magenta"))
         # the full status block prints ONCE, at the moment of victory -
@@ -608,7 +648,11 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
         print("(full evidence-backed notes: buzz recap)")
     elif cmd == "hint":
         if not rest:
-            raise GameError("usage: buzz hint <id>")
+            if not s.focus:
+                raise GameError("usage: buzz hint <id> - or view a quest "
+                                "first ('buzz quest <id>' tracks it, then "
+                                "bare 'hint' means that quest)")
+            rest = [s.focus]
         lvl, text = engine.hint(world, s, rest[0])
         print(f"oracle hint {lvl}: {text}")
     elif cmd == "wanted":

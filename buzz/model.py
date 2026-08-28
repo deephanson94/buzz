@@ -158,6 +158,7 @@ class Session:
     victory: bool = False
     log: list[str] = field(default_factory=list)
     wanted: dict = field(default_factory=dict)   # daily mystery: date/guesses/done/won
+    focus: str = ""             # tracked quest id: bare hint/answer target it
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
