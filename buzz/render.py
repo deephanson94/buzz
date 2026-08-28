@@ -171,7 +171,11 @@ def _status_of(s: Session, qid: str) -> str:
 
 def render_quests(world: World, s: Session, zone_id: str) -> str:
     z = world.zones[zone_id]
-    qs = [q for q in world.questions.values() if q.zone == zone_id]
+    qs = [q for q in world.questions.values() if q.zone == zone_id
+          # place quests are district-independent (filed under their
+          # answer): they list in 'quests all', never here, and never
+          # count toward this district's clear
+          and q.qtype != "place"]
     fus = [q for q in s.followups.values() if q["zone"] == zone_id]
     nb = [q for q in qs if not q.boss]
     done = sum(1 for q in nb if q.id in s.resolved)

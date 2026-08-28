@@ -149,10 +149,13 @@ consumer (edges, search, probe); round 3 confirmed limbo end-to-end
 and caught journey labels FABRICATING function names by truncating
 identifiers before '()' - and, best of all, that the CLI itself leaks
 place answers: 'buzz who' and 'buzz edges' printed '[z4]' for unplaced
-modules (now masked to '[???]'). OPEN DESIGN ITEMS, recorded not fixed: (a) place quests
-list under their answer district in 'quests'/'quests all' (the
-listing's district IS the answer) and the arrival nudge points at
-them; (b) round c3's deepest finding - 'buzz edges <zone>' plus
+modules (now masked to '[???]'). OPEN DESIGN ITEMS: (a) FIXED in round c4's wake -
+place quests are now district-independent: they list in 'quests all'
+as '(unplaced - its district IS the answer)', never in a district's
+own listing, and never gate a zone's clear; 'quests all' also masks
+the names of districts with no read member (a virgin session's first
+command had been solving both place quests and reading five district
+names off one listing); (b) round c3's deepest finding - 'buzz edges <zone>' plus
 'buzz who' supply enough free graph that a full clear needed only
 9/44 files read: the fog never bound the player. Deciding how much
 graph those tools give away for free is a difficulty-model question,

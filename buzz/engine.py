@@ -197,7 +197,7 @@ def zone_edges(world: World, zid: str, s: Session | None = None) -> list[str]:
         for e in edges:
             indeg[e.dst] = indeg.get(e.dst, 0) + 1
         top = sorted(indeg.items(), key=lambda kv: (-kv[1], kv[0]))
-        lines.append("in-district in-degree tally: "
+        lines.append("in-district in-degree tally (placed modules only): "
                      + ", ".join(f"{m} ({n})" for m, n in top))
     if quest_open("hotspot"):
         lines.append("(churn ranking withheld: this district's hotspot quest "
@@ -637,7 +637,10 @@ def _post_answer(world: World, s: Session, q: Question) -> None:
     for z in world.zones.values():
         if z.id in s.cleared:
             continue
-        zq = [x for x in world.questions.values() if x.zone == z.id and not x.boss]
+        # place quests are district-independent: filed under their
+        # answer, so they neither list in a district nor gate its clear
+        zq = [x for x in world.questions.values()
+              if x.zone == z.id and not x.boss and x.qtype != "place"]
         if zq and all(x.id in s.resolved for x in zq):
             s.cleared.append(z.id)
             s.log.append(f"zone cleared: {z.name}")

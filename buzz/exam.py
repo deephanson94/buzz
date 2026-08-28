@@ -72,22 +72,32 @@ def current(world: World, s: Session):
     return world.questions[e["qids"][e["idx"]]]
 
 
-def truth_line(q: Question) -> str:
-    """The canonical answer, so a miss teaches on the spot - this is
-    material the player already solved once, nothing new leaks."""
+def truth_line(world: World, q: Question) -> str:
+    """A correct answer, so a miss teaches on the spot - this is
+    material the player already solved once, nothing new leaks. The
+    keys are checked ANSWER-first: for place and region quests the
+    subject module also sits in the truth dict, and echoing it printed
+    a confident wrong answer (round WEBATLASc4)."""
     t = q.truth
-    if "example" in t:
-        return " -> ".join(t["example"])
-    for k in ("best", "module", "target", "order"):
-        if k in t:
-            v = t[k]
-            return " ".join(v) if isinstance(v, list) else str(v)
+    if q.qtype == "place" and "zone" in t:
+        z = world.zones.get(t["zone"])
+        return z.name if z else t["zone"]
     if "region" in t:
         return ", ".join(t["region"])
+    if "example" in t:
+        return " -> ".join(t["example"])
+    if "order" in t:
+        v = t["order"]
+        return " ".join(v) if isinstance(v, list) else str(v)
+    if "best" in t:
+        return str(t["best"])
     if "src" in t and "dst" in t:
         return f"{t['src']} -> {t['dst']}"
     if "n" in t:
         return str(t["n"])
+    for k in ("module", "target"):
+        if k in t:
+            return str(t[k])
     return "(see 'buzz quest %s')" % q.id
 
 
@@ -122,7 +132,7 @@ def grade(world: World, s: Session, args: list[str]) -> dict:
               "next": current(world, s) if not done else None,
               "i": e["idx"], "total": len(e["qids"])}
     if not ok:
-        result["truth"] = truth_line(q)
+        result["truth"] = truth_line(world, q)
     if done:
         pct = int(round(100 * len(e["correct"]) / len(e["qids"])))
         e["best"] = max(e.get("best", 0), pct)

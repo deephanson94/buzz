@@ -145,7 +145,9 @@ def _journeys_svg(world: World, s: Session) -> str:
     if not js:
         return ""
     parts, y = [], 44
-    for q in sorted(js, key=lambda q: q.id):
+    # solved strips first: an untraced placeholder sitting directly
+    # above another journey's drawn diagram read as its answer
+    for q in sorted(js, key=lambda q: (q.id not in s.resolved, q.id)):
         t = q.truth
         if q.id not in s.resolved:
             parts.append(f'<text x="24" y="{y}" class="ztitle">??? an '

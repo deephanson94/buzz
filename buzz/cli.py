@@ -270,13 +270,20 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
         if rest and rest[0] == "all":
             print("every quest in the hive (id / type / XP / zone / status):")
             for z in sorted(world.zones.values(), key=lambda z: z.order):
+                zname = (z.name if any(m in s.discovered
+                                       for m in z.members) else "???")
                 for q in sorted((q for q in world.questions.values()
                                  if q.zone == z.id),
                                 key=lambda q: (q.boss, q.id)):
                     st = s.resolved.get(q.id, "open")
                     boss = " [BOSS]" if q.boss else ""
+                    # an OPEN place quest filed under its district hands
+                    # over its own answer - it lists as unplaced instead
+                    shown = ("(unplaced - its district IS the answer)"
+                             if q.qtype == "place" and st == "open"
+                             else zname)
                     print(f"  {q.id:5} {q.qtype:8} {q.xp:>3}xp  "
-                          f"{z.name}{boss}  [{st}]")
+                          f"{shown}{boss}  [{st}]")
         elif rest:
             print(render.render_quests(world, s, engine.resolve_zone(world, rest[0])))
         else:
