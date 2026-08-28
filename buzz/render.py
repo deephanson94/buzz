@@ -26,7 +26,10 @@ def known_zones(world: World, s: Session) -> set[str]:
     known = {world.modules[m].zone for m in s.discovered
              if m in world.modules and m not in masked}
     for q in world.questions.values():
-        if q.qtype == "place" and q.id in s.resolved:
+        if q.qtype == "place" and (q.id in s.resolved
+                                   or s.hints.get(q.id, 0) >= 3):
+            # resolved, or the oracle's level-3 hint said it out loud -
+            # the map must not pretend otherwise (round c10)
             known.add(q.truth["zone"])
     # clearing a district is proof enough to learn its name
     known |= set(s.cleared)

@@ -59,8 +59,9 @@ def render_recap(world: World, s: Session) -> str:
             bits.append(f"{m}{tag}{doc}")
         impression = (f" _{z.brief}_ (scout's impression, AI-written)."
                       if z.brief and z.id in known else "")
+        visible_n = len([m for m in z.members if m not in masked])
         lines.append(f"- **{zname}** -{impression} {len(hit)}/"
-                     f"{len(z.members)} modules surveyed. "
+                     f"{visible_n} modules surveyed. "
                      f"Key parts: {'; '.join(bits)}.")
     lines += [
         "",

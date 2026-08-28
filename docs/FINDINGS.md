@@ -162,7 +162,16 @@ graph those tools give away for free is a difficulty-model question,
 not a bug fix; (c) a district can be *CLEARED* while still named
 '??? unexplored' (all its quests solved without a visit) - decide
 whether clearing should name it; (d) the post-answer nudge reasons
-from the standing zone, not the solved quest's zone; (e) round c6's
+from the standing zone, not the solved quest's zone; (e2, NEW from round c10) an intermittent LOST WRITE: one correct
+answer printed its full CORRECT banner and zone-clear yet nothing
+persisted - re-running the identical command banked it. Not
+reproduced in three targeted attempts; suspect concurrent one-shot
+invocations racing the session file (last-writer-wins). Needs file
+locking or write-then-rename with a version check - this silently
+deletes a solve, the inverse of rule 4. Also recorded from c10:
+FULL CLEAR banner overclaims ('every district mapped' with two
+districts unentered), the boss-lair map nudge outlives the boss, and
+the streak display is illegible after a hinted solve. (e) round c6's
 design critique of the place quest TYPE: its answer is a majority
 vote over buzz's own Louvain partition ('which cluster did the
 partitioner assign this to'), and hint 1 says as much - unlike gate or

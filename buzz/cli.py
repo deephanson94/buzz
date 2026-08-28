@@ -280,6 +280,10 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
             print("every quest in the hive (id / type / XP / zone / status):")
             from .render import known_zones as _kz
             _known = _kz(world, s)
+            # open place quests print in a TRAILING bucket: sorted into
+            # their true zone's contiguous run, list position itself was
+            # the answer (round c10's block-ordering oracle)
+            deferred = []
             for z in sorted(world.zones.values(), key=lambda z: z.order):
                 zname = z.name if z.id in _known else "???"
                 for q in sorted((q for q in world.questions.values()
@@ -287,13 +291,14 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
                                 key=lambda q: (q.boss, q.id)):
                     st = s.resolved.get(q.id, "open")
                     boss = " [BOSS]" if q.boss else ""
-                    # an OPEN place quest filed under its district hands
-                    # over its own answer - it lists as unplaced instead
-                    shown = ("(unplaced - its district IS the answer)"
-                             if q.qtype == "place" and st == "open"
-                             else zname)
+                    if q.qtype == "place" and st == "open":
+                        deferred.append(q)
+                        continue
                     print(f"  {q.id:5} {q.qtype:8} {q.xp:>3}xp  "
-                          f"{shown}{boss}  [{st}]")
+                          f"{zname}{boss}  [{st}]")
+            for q in sorted(deferred, key=lambda q: q.id):
+                print(f"  {q.id:5} {q.qtype:8} {q.xp:>3}xp  "
+                      f"(unplaced - its district IS the answer)  [open]")
         elif rest:
             print(render.render_quests(world, s, engine.resolve_zone(world, rest[0])))
         else:

@@ -223,14 +223,19 @@ def who(world: World, name: str, s: Session | None = None) -> list[str]:
     ins = world.in_edges(m)
     from .render import masked_modules
     masked = masked_modules(world, s) if s is not None else set()
+    # if the QUERIED module's own placement is an open mystery, its
+    # importers' zone tags are the majority vote the hint ladder sells
+    # (round c10: 'who <unplaced>' was a one-command place-solve)
+    subject_masked = m in masked
     lines = [f"who imports {m} (whole hive, direct edges only):"]
     for e in sorted(ins, key=lambda e: (e.kind, e.src)):
         _name_seen(s, e.src)
-        # the zone tag of a module under an open place quest IS that
-        # quest's answer (round WEBATLAS: a scout solved q27 by copying
-        # it out of this very listing)
-        z = "???" if e.src in masked else world.modules[e.src].zone
+        z = ("???" if (e.src in masked or subject_masked)
+             else world.modules[e.src].zone)
         lines.append(f"  {e.src} [{z}]  ({kinds[e.kind]})")
+    if subject_masked and ins:
+        lines.append("  (zone tags withheld: this module's district is "
+                     "an open place quest - the tags would be the vote)")
     if not ins:
         lines.append("  nobody - it is a root or an entry point")
     lines.append("(transitive importers are not listed - chains are yours to walk)")

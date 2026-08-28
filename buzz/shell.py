@@ -81,6 +81,10 @@ def _completer_factory(world: World, s: Session):
                 cands = VERBS
             elif cmd in ("quest", "hint") and argn == 1:
                 cands = list(world.questions) + list(s.followups)
+            elif cmd == "answer" and argn >= 3 and "place" in words:
+                cands = list(world.zones) + [
+                    z.name for z in world.zones.values()
+                    if z.id in _rknown(world, s)]
             elif cmd in ("scout", "edges", "quests"):
                 cands = list(world.zones) + [
                 z.name for z in world.zones.values()
