@@ -152,12 +152,21 @@ def zone_edges(world: World, zid: str, s: Session | None = None) -> list[str]:
     tally is withheld while the district's own hub quest is open (it would
     BE the answer); everywhere else the game does the counting for you."""
     members = set(world.zones[zid].members)
+    # a module under an OPEN place quest must not appear in a titled
+    # district's member list - membership IS that quest's answer (round
+    # WEBATLASc3 solved both place quests straight off this listing)
+    from .render import masked_modules
+    _masked = masked_modules(world, s) if s is not None else set()
+    withheld = members & _masked
+    members = members - withheld
     edges = [e for e in world.edges
              if e.kind == TOP and e.src in members and e.dst in members]
     lines = [f"top-level import edges inside {world.zones[zid].name} ({zid}):"]
     for e in sorted(edges, key=lambda e: (e.src, e.dst)):
         _name_seen(s, e.src, e.dst)
         lines.append(f"  {e.src} -> {e.dst}")
+    # NB: withheld edges get no note here - "N unplaced modules in THIS
+    # district" is the same leak in a different coat
     if not edges:
         lines.append("  (none - this district is held together by git "
                      "history and convention, not imports)")

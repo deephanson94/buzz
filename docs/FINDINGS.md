@@ -149,11 +149,17 @@ consumer (edges, search, probe); round 3 confirmed limbo end-to-end
 and caught journey labels FABRICATING function names by truncating
 identifiers before '()' - and, best of all, that the CLI itself leaks
 place answers: 'buzz who' and 'buzz edges' printed '[z4]' for unplaced
-modules (now masked to '[???]'). OPEN DESIGN ITEM, recorded not fixed:
-place quests list under their answer district in 'quests'/'quests all'
-(the listing's district IS the answer), and the arrival nudge points at
-them - closing it needs a design decision about where place quests
-live. Probe verdicts also verified: an earned-sight route that
+modules (now masked to '[???]'). OPEN DESIGN ITEMS, recorded not fixed: (a) place quests
+list under their answer district in 'quests'/'quests all' (the
+listing's district IS the answer) and the arrival nudge points at
+them; (b) round c3's deepest finding - 'buzz edges <zone>' plus
+'buzz who' supply enough free graph that a full clear needed only
+9/44 files read: the fog never bound the player. Deciding how much
+graph those tools give away for free is a difficulty-model question,
+not a bug fix; (c) a district can be *CLEARED* while still named
+'??? unexplored' (all its quests solved without a visit) - decide
+whether clearing should name it; (d) the post-answer nudge reasons
+from the standing zone, not the solved quest's zone. Probe verdicts also verified: an earned-sight route that
 `buzz trace` confirms hop-for-hop, edge kinds carried into the chain
 text with a CAUTION on types-only hops. Methodology: the audit-fix-
 confirm loop ran three times because each confirmation found a NEW

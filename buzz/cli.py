@@ -315,18 +315,18 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
         # name what was gained - EXCEPT place-quest targets: tying their
         # name to the district just scouted would hand over that answer
         namable = sorted(m for m in gained if m not in masked)
-        if gained:
-            print(f"your scouts report back: {len(gained)} new name(s) on "
-                  f"the map"
-                  + (f": {', '.join(namable)}" if namable else "")
-                  + "  (names only - fly there to read their imports)")
+        # report ONLY the namable count: '3 new names' listing 2 would
+        # betray that an unplaced module lives in this district, and a
+        # per-zone 'sightings stay unplaced here' note narrowed every
+        # place quest to one district for free (round WEBATLASc3)
+        if namable:
+            print(f"your scouts report back: {len(namable)} new name(s) "
+                  f"on the map: {', '.join(namable)}"
+                  f"  (names only - fly there to read their imports)")
         else:
-            print("your scouts report back: every name in this district "
-                  "was already on your map")
-        if hidden_here:
-            print(f"({len(hidden_here)} sighting(s) stay unplaced until "
-                  f"their place quest is solved - see 'unplaced sightings' "
-                  f"on the map)")
+            print("your scouts report back: nothing new to NAME in this "
+                  "district (unplaced sightings, if any, appear on the "
+                  "map without a district)")
     elif cmd == "answer":
         if len(rest) < 2:
             raise GameError("usage: buzz answer <id> [verb] <answer...> - "
@@ -520,8 +520,11 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
             print(paint("RECALLED." if r["ok"] else "slipped away.",
                         "green" if r["ok"] else "yellow"))
             if not r["ok"]:
-                print(f"  it was: {r['truth']}  (you proved this once - "
-                      f"'buzz quest {r['q'].id}' re-reads it)")
+                # 'you proved this once' asserted a canonical chain as
+                # the player's own - several chains can be equally true
+                print(f"  one correct answer: {r['truth']}  (yours may "
+                      f"have been another - 'buzz quest {r['q'].id}' "
+                      f"re-reads it)")
             if r["done"]:
                 print(f"\nexam over: {r['pct']}% retention "
                       f"({len(s.exam['correct'])}/{r['total']}) - "

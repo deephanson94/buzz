@@ -144,7 +144,7 @@ def _journeys_svg(world: World, s: Session) -> str:
     js = [q for q in world.questions.values() if q.qtype == "journey"]
     if not js:
         return ""
-    parts, y = [], 26
+    parts, y = [], 44
     for q in sorted(js, key=lambda q: q.id):
         t = q.truth
         if q.id not in s.resolved:
@@ -535,8 +535,9 @@ def render_atlas(world: World, s: Session) -> str:
                 f'<text x="{cx}" y="{cy + dy}" class="mlabel">'
                 f'{html.escape(disp(m))}</text>')
             if m == s.here:
-                parts.append(f'<text x="{cx - 13}" y="{cy + 3}" '
-                             f'class="you" text-anchor="end">YOU</text>')
+                parts.append(f'<text x="{cx - 18}" y="{cy + 3}" '
+                             f'class="you" style="text-anchor:end">'
+                             f'YOU</text>')
             if m in marks:
                 parts.append(f'<circle cx="{cx}" cy="{cy}" r="13" '
                              f'class="mark"/>')
@@ -649,7 +650,7 @@ def render_atlas(world: World, s: Session) -> str:
   .ztitle {{ fill:#cdbfa3; font-size:13px; font-weight:bold; }}
   .mlabel {{ fill:#9a8f7a; font-size:9px; text-anchor:middle;
     paint-order:stroke; stroke:#171411; stroke-width:3px; }}
-  .you {{ fill:#e9c46a; font-size:9px; font-weight:bold; text-anchor:middle;
+  .you {{ fill:#e9c46a; font-size:9px; font-weight:bold;
     paint-order:stroke; stroke:#171411; stroke-width:3px; }}
   .ztitle {{ paint-order:stroke; stroke:#171411; stroke-width:4px; }}
   .fog {{ fill:#33302a; }}
