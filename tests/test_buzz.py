@@ -157,7 +157,9 @@ def test_sealed_tunnel_blocked(world):
     # place player at core; render is lazy target -> sealed
     engine._arrive(world, s, "core")
     ok, why = engine.can_travel(world, s, "render")
-    assert not ok and "SEALED" in why
+    # the refusal must neither name the destination nor confirm the
+    # edge's endpoint (round c13: the old message handed both over)
+    assert not ok and "sealed tunnel" in why and "render" not in why
     s.abilities.append(engine.TUNNEL)
     ok, _ = engine.can_travel(world, s, "render")
     assert ok

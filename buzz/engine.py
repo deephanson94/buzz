@@ -73,6 +73,18 @@ def resolve_module(world: World, name: str) -> str:
                     f"still hold it")
 
 
+def resolve_visible(world: World, s: Session, name: str) -> str:
+    """THE fog gate for user-typed names: resolves like resolve_module,
+    but an unseen module answers with the byte-identical refusal an
+    unknown name gets. Every verb that takes a module name must come
+    through here (round c13: seven verbs, seven different oracles)."""
+    m = resolve_module(world, name)
+    if s is not None and m not in s.seen:
+        raise GameError(f"'{name}' is not within your sight - the fog "
+                        f"may still hold it")
+    return m
+
+
 def resolve_zone(world: World, name: str) -> str:
     if name in world.zones:
         return name
@@ -98,13 +110,19 @@ def can_travel(world: World, s: Session, dst: str) -> tuple[bool, str]:
         # only blocks what no one has named yet
         return True, "scout-flight"
     if edge:
-        return False, (f"the tunnel from {s.here} to {dst} is SEALED - a "
-                       f"function-level import hiding its destination. Solve "
-                       f"a cycle quest to unlock tunnel-vision.")
-    return False, f"{dst} is still under fog - you have not seen it yet"
+        # never name the destination the seal exists to hide (c13: this
+        # sentence confirmed existence AND handed over the hidden edge)
+        return False, (f"a sealed tunnel leads out of {s.here} toward "
+                       f"somewhere unseen - a function-level import hides "
+                       f"its destination. Solve a cycle quest to unlock "
+                       f"tunnel-vision.")
+    return False, (f"'{dst}' is not within your sight - the fog may "
+                   f"still hold it")
 
 
 def go(world: World, s: Session, name: str) -> str:
+    # NB: can_travel handles seen/sealed nuance; resolve here stays
+    # permissive because its refusals below use the canonical sentence
     dst = resolve_module(world, name)
     ok, how = can_travel(world, s, dst)
     if not ok:
@@ -226,7 +244,7 @@ def zone_edges(world: World, zid: str, s: Session | None = None) -> list[str]:
 def who(world: World, name: str, s: Session | None = None) -> list[str]:
     """Reverse imports of one module across the WHOLE hive, by edge kind -
     the fan-in view that per-module look can't give you."""
-    m = resolve_module(world, name)
+    m = resolve_visible(world, s, name)
     kinds = {TOP: "top-level", LAZY: "function-level (sealed)",
              TYPE: "TYPE_CHECKING-only"}
     ins = world.in_edges(m)
@@ -869,10 +887,10 @@ def flow(world: World, s: Session, name: str) -> list[str]:
     """Who does this module CALL into at runtime, and who calls into it?
     Reading calls means reading the file, so it requires a module you have
     already read (visited or spyglassed)."""
-    m = resolve_module(world, name)
+    m = resolve_visible(world, s, name)
     if m not in s.discovered:
         raise GameError(f"you have not read {m} yet - 'buzz look {m}' "
-                        f"(if you can see it) or fly there first")
+                        f"or fly there first")
     outs = [c for c in world.calls if c["src"] == m]
     ins = [c for c in world.calls if c["dst"] == m]
     lines = [f"where {m}'s work goes (function calls, not just imports):"]
@@ -931,7 +949,7 @@ def chronicle(world: World, s: Session, name: str) -> list[str]:
     """The hive's records for one module: focused commits and reverts that
     touched it. Companion names are withheld while an open patch quest in
     that module's zone depends on them - the record IS that answer."""
-    m = resolve_module(world, name)
+    m = resolve_visible(world, s, name)
     zid = world.modules[m].zone
     patch_open = any(q.qtype == "patch" and q.zone == zid
                      and q.id not in s.resolved

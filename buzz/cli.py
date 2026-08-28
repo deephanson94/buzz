@@ -509,7 +509,7 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
     elif cmd == "trace":
         if len(rest) < 2:
             raise GameError("usage: buzz trace <module> <module> [module ...]")
-        mods = [engine.resolve_module(world, x) for x in rest]
+        mods = [engine.resolve_visible(world, s, x) for x in rest]
         print("\n".join(engine.trace(world, s, mods)))
     elif cmd == "chronicle":
         if not rest:
@@ -527,9 +527,9 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
     elif cmd == "probe":
         if len(rest) < 2:
             raise GameError("usage: buzz probe <module> <suspect> [suspect ...]")
-        a = engine.resolve_module(world, rest[0])
+        a = engine.resolve_visible(world, s, rest[0])
         for other in rest[1:]:
-            b = engine.resolve_module(world, other)
+            b = engine.resolve_visible(world, s, other)
             engine._name_seen(s, a, b)
             print(f"[{a} x {b}]")
             print(engine.probe(world, a, b))
