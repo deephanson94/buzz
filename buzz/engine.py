@@ -208,6 +208,10 @@ def zone_edges(world: World, zid: str, s: Session | None = None) -> list[str]:
                      "is still open - that ranking IS the answer)")
     else:
         churn = sorted(members, key=lambda m: -world.modules[m].commits)[:8]
+        # a name this line prints is a name the session has seen - the
+        # rest of edges registers its names; this line skipped the
+        # bookkeeping (round c11's accounting mismatch)
+        _name_seen(s, *churn)
         lines.append("churn ranking (commits): "
                      + ", ".join(f"{m} ({world.modules[m].commits})"
                                  for m in churn))

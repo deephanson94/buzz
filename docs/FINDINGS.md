@@ -162,7 +162,13 @@ graph those tools give away for free is a difficulty-model question,
 not a bug fix; (c) a district can be *CLEARED* while still named
 '??? unexplored' (all its quests solved without a visit) - decide
 whether clearing should name it; (d) the post-answer nudge reasons
-from the standing zone, not the solved quest's zone; (e2, NEW from round c10) an intermittent LOST WRITE: one correct
+from the standing zone, not the solved quest's zone; (e1, from round c11, FIXED) quest ids were zone-contiguous
+generation ordinals - the id NUMBER alone identified a place quest's
+hidden district (18/19 blind placements across six worlds). Ids are
+now a deterministic sha-seeded permutation assigned at world-pin
+time, references remapped, locked by a regression test. NOTE: worlds
+must be re-analyzed to get shuffled ids; old world.json files keep
+the oracle. (e2, NEW from round c10) an intermittent LOST WRITE: one correct
 answer printed its full CORRECT banner and zone-clear yet nothing
 persisted - re-running the identical command banked it. Not
 reproduced in three targeted attempts; suspect concurrent one-shot

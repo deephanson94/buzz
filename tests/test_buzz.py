@@ -1053,3 +1053,32 @@ def test_known_zones_one_predicate(world):
     # surface reads the same predicate
     s.resolved[pq.id] = "correct"
     assert zid in known_zones(world, s)
+
+
+def test_quest_ids_carry_no_zone_information(world, tmp_path):
+    # regeneration is deterministic: same repo, same ids
+    from buzz.analyze import analyze
+    from buzz.questions import generate_questions
+    import pathlib
+    w2 = analyze(pathlib.Path(world.repo))
+    generate_questions(w2)
+    assert list(w2.questions) == list(world.questions)
+    # every stored reference survived the shuffle
+    for q in world.questions.values():
+        if q.truth.get("prev_stage"):
+            assert q.truth["prev_stage"] in world.questions
+        if q.followup_of:
+            assert q.followup_of in world.questions
+    # ids in numeric order must NOT walk the zones in generation order
+    # (zone-contiguous id runs were a turn-zero place-quest oracle);
+    # with 2+ zones and 4+ quests the odds a random permutation stays
+    # perfectly zone-contiguous are negligible for real worlds - assert
+    # only when the fixture is big enough to make the check meaningful
+    qs = sorted(world.questions.values(), key=lambda q: int(q.id[1:]))
+    zones_in_id_order = [q.zone for q in qs]
+    runs = 1 + sum(1 for a, b in zip(zones_in_id_order,
+                                     zones_in_id_order[1:]) if a != b)
+    distinct = len(set(zones_in_id_order))
+    if len(qs) >= 8 and distinct >= 3:
+        assert runs > distinct, (
+            "ids form zone-contiguous runs - the id number is an oracle")

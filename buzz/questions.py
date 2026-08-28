@@ -1074,6 +1074,29 @@ def generate_questions(world: World) -> None:
             if not capped("ghost"):
                 gen_ghost(world, z.id, used=used)
 
+    # quest ids must carry NO information: generation walks zones in
+    # order, so sequential ids formed zone-contiguous runs and the id
+    # NUMBER alone identified a place quest's hidden district (audit
+    # round c11: 18/19 blind placements across six worlds from 'map' +
+    # 'quests all'). Deterministic permutation, seeded by the pinned
+    # sha, remapping every stored reference.
+    import random as _random
+    olds = list(world.questions)
+    perm = olds[:]
+    _random.Random(f"buzz-ids:{world.sha}").shuffle(perm)
+    remap = {o: f"q{i + 1}" for i, o in enumerate(perm)}
+    newq = {}
+    for o in olds:
+        q = world.questions[o]
+        q.id = remap[o]
+        if q.truth.get("prev_stage") in remap:
+            q.truth["prev_stage"] = remap[q.truth["prev_stage"]]
+        if q.followup_of in remap:
+            q.followup_of = remap[q.followup_of]
+        newq[q.id] = q
+    world.questions = dict(sorted(newq.items(),
+                                  key=lambda kv: int(kv[0][1:])))
+
 
 def make_followup(world: World, q: Question, n_existing: int) -> dict | None:
     """A wrong answer reveals the truth and spawns a smaller, related
