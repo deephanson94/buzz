@@ -85,20 +85,22 @@ def _strata_svg(world: World, s: Session) -> str:
     parts, y = [], 30
     width = 1500
     for l, mods in rows:
+        # a staff audit caught the original leaking the complete depth
+        # histogram at turn 0 via fog specks: only SEEN modules may
+        # exist on this page, and a layer nobody has seen is not drawn
+        vis = [m for m in mods if m in seen]
+        if not vis:
+            continue
         parts.append(f'<rect x="20" y="{y}" width="{width - 40}" height="46" '
                      f'rx="8" class="zone"/>')
         label = ("foundation - imports nothing internal" if l == 0 else
                  f"layer {l}")
         parts.append(f'<text x="32" y="{y + 27}" class="ztitle">{label}</text>')
         x = 260
-        for m in sorted(mods, key=lambda m: -world.modules[m].pagerank):
+        for m in sorted(vis, key=lambda m: -world.modules[m].pagerank):
             if x > width - 120:
                 break
             mod = world.modules[m]
-            if m not in seen:
-                parts.append(f'<circle cx="{x}" cy="{y + 23}" r="4" class="fog"/>')
-                x += 18
-                continue
             color = ROLE_COLOR.get(mod.role, "#8a8a8a")
             fill = color if m in disc else "none"
             parts.append(
@@ -106,13 +108,13 @@ def _strata_svg(world: World, s: Session) -> str:
                 f'cy="{y + 18}" r="6" fill="{fill}" stroke="{color}"/>')
             parts.append(f'<text x="{x}" y="{y + 38}" class="mlabel">'
                          f'{html.escape(m.split(".")[-1][:11])}</text>')
-            x += max(26, 9 * min(11, len(m.split(".")[-1])))
+            x += max(30, 9 * min(11, len(m.split(".")[-1])) + 12)
         y += 56
     return (f'<h1>THE STRATA - who rests on whom</h1>'
             f'<div class="legend">the classic layers diagram, computed from '
             f'always-run imports: everything in a layer can only lean on '
-            f'layers below it. Fog rules apply - keep exploring to fill it '
-            f'in.</div>'
+            f'layers below it. Only what you have SEEN appears - the fog '
+            f'may hold layers this page does not admit to.</div>'
             f'<svg viewBox="0 0 1500 {y + 10}" '
             f'xmlns="http://www.w3.org/2000/svg">{"".join(parts)}</svg>')
 
@@ -148,12 +150,13 @@ def _journeys_svg(world: World, s: Session) -> str:
                 rec = next((c for c in world.calls if c["src"] == m
                             and c["dst"] == path[i + 1]), None)
                 fns = "/".join((rec.get("via") or ["?"])[:2]) if rec else "?"
-                parts.append(f'<line x1="{x + w}" y1="{y}" x2="{x + w + 44}" '
+                parts.append(f'<line x1="{x + w}" y1="{y}" x2="{x + w + 58}" '
                              f'y2="{y}" class="top" marker-end="url(#arr)"/>')
-                parts.append(f'<text x="{x + w + 22}" y="{y - 8}" '
-                             f'class="mlabel" style="font-size:9px">'
-                             f'{html.escape(fns[:18])}()</text>')
-            x += w + 48
+                parts.append(f'<text x="{x + w + 29}" y="{y - 8}" '
+                             f'class="mlabel" style="font-size:9px" '
+                             f'text-anchor="middle">'
+                             f'{html.escape(fns[:14])}()</text>')
+            x += w + 62
         coords = ";".join(f"{cx:.0f},{cy:.0f}" for cx, cy in stations)
         parts.append(f'<text x="{x + 6}" y="{y + 4}" class="play" '
                      f'data-stations="{coords}" style="cursor:pointer">'
@@ -176,14 +179,19 @@ var town = document.getElementById('town');
 var vb0 = town.getAttribute('viewBox').split(' ').map(Number);
 var vb = vb0.slice();
 function setVB() { town.setAttribute('viewBox', vb.join(' ')); }
+var msg = document.getElementById('probemsg');
+var HINT = msg.textContent;
 
 // --- pan (drag) + zoom (wheel, about the cursor)
-var drag = null;
+var drag = null, dragged = false;
 town.addEventListener('mousedown', function (e) {
   drag = {x: e.clientX, y: e.clientY, vb: vb.slice()};
+  dragged = false;
 });
 window.addEventListener('mousemove', function (e) {
   if (!drag) return;
+  if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 3)
+    dragged = true;
   var k = vb[2] / town.clientWidth;
   vb[0] = drag.vb[0] - (e.clientX - drag.x) * k;
   vb[1] = drag.vb[1] - (e.clientY - drag.y) * k;
@@ -192,7 +200,7 @@ window.addEventListener('mousemove', function (e) {
 window.addEventListener('mouseup', function () { drag = null; });
 town.addEventListener('wheel', function (e) {
   e.preventDefault();
-  var k = e.deltaY > 0 ? 1.15 : 0.87;
+  var k = e.deltaY > 0 ? 1.25 : 0.8;
   var r = town.getBoundingClientRect();
   var mx = vb[0] + (e.clientX - r.left) / r.width * vb[2];
   var my = vb[1] + (e.clientY - r.top) / r.height * vb[3];
@@ -203,6 +211,8 @@ town.addEventListener('wheel', function (e) {
 }, {passive: false});
 document.getElementById('reset').addEventListener('click', function () {
   vb = vb0.slice(); setVB(); clearRoute(); clearHit();
+  probing = false; probeBtn.classList.remove('on');
+  msg.textContent = HINT;
 });
 
 // --- search: seen modules only (NODES is fog-filtered at generation)
@@ -210,7 +220,7 @@ var hit = null;
 function clearHit() { if (hit) { hit.remove(); hit = null; } }
 function centerOn(m) {
   var p = NODES[m]; if (!p) return;
-  var w = Math.max(vb0[2] / 5, 260), h = w * vb0[3] / vb0[2];
+  var w = Math.max(vb0[2] / 3, 420), h = w * vb0[3] / vb0[2];
   vb = [p[0] - w / 2, p[1] - h / 2, w, h]; setVB();
   clearHit();
   hit = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
@@ -222,19 +232,26 @@ document.getElementById('q').addEventListener('keydown', function (e) {
   if (e.key !== 'Enter') return;
   var q = this.value.trim().toLowerCase(); if (!q) return;
   var names = Object.keys(NODES);
-  var m = names.find(function (n) { return n.toLowerCase() === q; })
-       || names.find(function (n) {
-            return n.toLowerCase().endsWith('.' + q)
-                || n.split('.').pop().toLowerCase() === q; })
-       || names.find(function (n) { return n.toLowerCase().includes(q); });
-  var msg = document.getElementById('probemsg');
-  if (m) { centerOn(m); msg.textContent = 'found: ' + m; }
-  else { msg.textContent = 'no seen module matches "' + q
-         + '" - the fog may still hold it'; }
+  var exact = names.filter(function (n) {
+    return n.toLowerCase() === q || n.toLowerCase().endsWith('.' + q)
+        || n.split('.').pop().toLowerCase() === q; });
+  var subs = names.filter(function (n) {
+    return n.toLowerCase().includes(q); });
+  var cands = exact.length ? exact : subs;
+  if (!cands.length) {
+    msg.textContent = 'no seen module matches "' + q +
+      '" - the fog may still hold it';
+    return;
+  }
+  centerOn(cands[0]);
+  msg.textContent = (cands.length === 1 ? 'found: ' + cands[0]
+    : cands.length + ' match: ' + cands.slice(0, 3).join(', ')
+      + (cands.length > 3 ? ', ...' : '') + ' (showing the first)');
 });
 
-// --- route probe: BFS over the EARNED edge list only. The route shown
-// is exactly the chain 'buzz trace' would verify - grounded, no guesses.
+// --- route probe: BFS over the EARNED edge list only, KINDS kept -
+// a TYPE_CHECKING or tunnel hop must never pass as an always-run one
+// (five quests teach exactly that distinction)
 var adj = {};
 EDGES.forEach(function (e) {
   (adj[e[0]] = adj[e[0]] || []).push({to: e[1], kind: e[2]});
@@ -244,7 +261,12 @@ function bfs(a, b) {
   while (q.length) {
     var u = q.shift();
     if (u === b) {
-      var path = [b]; while (path[0] !== a) path.unshift(prev[path[0]].m);
+      var path = [{m: b}];
+      while (path[0].m !== a) {
+        var pr = prev[path[0].m];
+        path[0].kind = pr.kind;
+        path.unshift({m: pr.m});
+      }
       return path;
     }
     (adj[u] || []).forEach(function (e) {
@@ -256,9 +278,9 @@ function bfs(a, b) {
 }
 var probing = false, probeA = null;
 var probeBtn = document.getElementById('probe');
-var msg = document.getElementById('probemsg');
+var routeG = document.getElementById('route');
 function clearRoute() {
-  document.getElementById('route').setAttribute('points', '');
+  while (routeG.firstChild) routeG.removeChild(routeG.firstChild);
   probeA = null;
 }
 probeBtn.addEventListener('click', function () {
@@ -266,12 +288,37 @@ probeBtn.addEventListener('click', function () {
   probeBtn.classList.toggle('on', probing);
   msg.textContent = probing
     ? 'probe armed: click the FIRST module, then the second'
-    : 'probe off';
+    : HINT;
 });
+var KIND_MARK = {top: '->', lazy: '-[tunnel]->', type: '-[types-only]->'};
+function drawRoute(path) {
+  clearRoute();
+  var NS = 'http://www.w3.org/2000/svg';
+  for (var i = 1; i < path.length; i++) {
+    var a = NODES[path[i - 1].m], b = NODES[path[i].m];
+    var ln = document.createElementNS(NS, 'line');
+    ln.setAttribute('x1', a[0]); ln.setAttribute('y1', a[1]);
+    ln.setAttribute('x2', b[0]); ln.setAttribute('y2', b[1]);
+    ln.setAttribute('class', 'rseg ' + (path[i].kind || 'top'));
+    ln.setAttribute('marker-end', 'url(#rarr)');
+    routeG.appendChild(ln);
+  }
+  path.forEach(function (st) {
+    var c = document.createElementNS(NS, 'circle');
+    var pnt = NODES[st.m];
+    c.setAttribute('cx', pnt[0]); c.setAttribute('cy', pnt[1]);
+    c.setAttribute('r', 11); c.setAttribute('class', 'rstop');
+    routeG.appendChild(c);
+  });
+}
 function probeClick(m) {
   if (!probeA) { probeA = m;
     msg.textContent = 'from ' + m + ' - now click the destination'; return; }
   var a = probeA, b = m; probeA = null;
+  if (a === b) {
+    msg.textContent = m + ' is both ends - click two DIFFERENT modules';
+    return;
+  }
   var path = bfs(a, b), flipped = false;
   if (!path) { path = bfs(b, a); flipped = true; }
   if (!path) {
@@ -279,12 +326,18 @@ function probeClick(m) {
       ' - read more files (edges appear when their importer is read)';
     return;
   }
-  var pts = path.map(function (n) { return NODES[n].join(','); }).join(' ');
-  document.getElementById('route').setAttribute('points', pts);
-  msg.textContent = (flipped ? (b + ' -> ' + a) : (a + ' -> ' + b)) +
-    ' : ' + path.join(' -> ') + '  (' + (path.length - 1) + ' hop' +
-    (path.length > 2 ? 's' : '') + ', verify: buzz trace ' +
-    path.join(' ') + ')';
+  drawRoute(path);
+  var chain = path[0].m;
+  for (var i = 1; i < path.length; i++)
+    chain += ' ' + (KIND_MARK[path[i].kind] || '->') + ' ' + path[i].m;
+  var names = path.map(function (st) { return st.m; });
+  var warn = path.some(function (st) { return st.kind === 'type'; })
+    ? '  CAUTION: a types-only hop never runs - this is NOT a blast-radius chain.'
+    : '';
+  msg.textContent = (flipped
+    ? ('no earned route ' + a + ' -> ' + b + '; the REVERSE exists: ')
+    : '') + chain + '  (verify: buzz trace ' + names.join(' ') +
+    ')' + warn + '  [probe still armed - PROBE ROUTE disarms]';
 }
 
 // --- dossier panel (click), shared with the probe's node clicks
@@ -305,22 +358,29 @@ document.querySelectorAll('.node').forEach(function (n) {
   });
 });
 document.body.addEventListener('click', function () {
+  if (dragged) { dragged = false; return; }  // a pan is not a dismiss
   panel.style.display = 'none';
 });
+window.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') panel.style.display = 'none';
+});
 
-// --- journey playback: a dot rides each solved journey's stations
-document.querySelectorAll('.play').forEach(function (btn) {
+// --- journey playback: each strip rides its own dot
+document.querySelectorAll('.play').forEach(function (btn, bi) {
   btn.addEventListener('click', function (ev) {
     ev.stopPropagation();
     var pts = btn.getAttribute('data-stations').split(';').map(function (s) {
       return s.split(',').map(Number); });
     var svg = btn.ownerSVGElement;
-    var old = svg.querySelector('#jdot'); if (old) old.remove();
+    var old = svg.querySelector('.jdot[data-j="' + bi + '"]');
+    if (old) old.remove();
     var dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    dot.setAttribute('id', 'jdot'); dot.setAttribute('r', 6);
+    dot.setAttribute('class', 'jdot'); dot.setAttribute('data-j', bi);
+    dot.setAttribute('r', 6);
     svg.appendChild(dot);
     var seg = 0, t0 = null, SEG_MS = 600;
     function step(ts) {
+      if (!dot.isConnected) return;
       if (t0 === null) t0 = ts;
       var f = Math.min(1, (ts - t0) / SEG_MS);
       var a = pts[seg], b = pts[seg + 1];
@@ -372,23 +432,42 @@ def render_atlas(world: World, s: Session) -> str:
         if primary in seen:
             marks.add(primary)
 
+    # duplicate short names ('backend' three times) get their parent
+    # segment back so the map stays unambiguous
+    from collections import Counter
+    tails = Counter(m.split(".")[-1] for m in world.modules)
+
+    def disp(m):
+        tail = m.split(".")[-1]
+        if tails[tail] > 1 and "." in m:
+            tail = ".".join(m.split(".")[-2:])
+        return tail[:16]
+
+    # rects first, then titles and nodes - a later district's rect must
+    # never paint over an earlier one's title (staff audit)
+    base_parts = parts
+    overlay = []
     for z in sorted(world.zones.values(), key=lambda z: z.order):
         x, y, w, h = boxes[z.id]
-        # sighting ONE member names the district (panels found '???' over a
-        # half-scouted zone read as a bug, not fog)
-        known = any(m in seen for m in z.members)
+        parts.append(
+            f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="12" '
+            f'class="zone{" cleared" if z.id in s.cleared else ""}"/>')
+    for z in sorted(world.zones.values(), key=lambda z: z.order):
+        x, y, w, h = boxes[z.id]
+        parts = overlay
+        # the district is NAMED by the same rule the CLI map uses: a
+        # member must be READ (the atlas naming zones the shell still
+        # called '???' was a groundedness break, not a convenience)
+        known = any(m in disc for m in z.members)
         title = z.name if known else "??? unexplored district"
         zq = [q for q in world.questions.values() if q.zone == z.id and not q.boss]
         done = sum(1 for q in zq if q.id in s.resolved)
         badge = " ✦ CLEARED" if z.id in s.cleared else (
             f"  {done}/{len(zq)} quests" if zq else "")
         parts.append(
-            f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="12" '
-            f'class="zone{" cleared" if z.id in s.cleared else ""}"/>')
-        parts.append(
             f'<text x="{x + 12}" y="{y + 24}" class="ztitle">'
             f'{html.escape(title)}{html.escape(badge)}</text>')
-        for m in z.members:
+        for mi, m in enumerate(z.members):
             cx, cy = pos[m]
             mod = world.modules[m]
             color = ROLE_COLOR.get(mod.role, "#8a8a8a")
@@ -402,17 +481,18 @@ def render_atlas(world: World, s: Session) -> str:
                 f'cx="{cx}" cy="{cy}" r="{9 if mod.role == ROLE_BOSS else 7}" '
                 f'fill="{fill}" stroke="{color}"{here}>'
                 f'<title>{html.escape(m)} ({mod.role}, {mod.commits} commits)</title></circle>')
-            label = m.split(".")[-1][:12]
+            dy = 20 if mi % 2 == 0 else 31
             parts.append(
-                f'<text x="{cx}" y="{cy + 20}" class="mlabel">'
-                f'{html.escape(label)}</text>')
+                f'<text x="{cx}" y="{cy + dy}" class="mlabel">'
+                f'{html.escape(disp(m))}</text>')
             if m == s.here:
-                parts.append(f'<text x="{cx}" y="{cy - 13}" class="you">YOU</text>')
+                parts.append(f'<text x="{cx}" y="{cy - 15}" class="you">YOU</text>')
             if m in marks:
                 parts.append(f'<circle cx="{cx}" cy="{cy}" r="13" '
                              f'class="mark"/>')
                 parts.append(f'<text x="{cx + 12}" y="{cy - 10}" '
                              f'class="bang">!</text>')
+    parts = base_parts + overlay  # edges+rects below, titles+nodes above
 
     # per-node dossier for the click panel - fog-respecting: discovered
     # modules carry full detail, merely-seen ones only their name and zone
@@ -422,7 +502,13 @@ def render_atlas(world: World, s: Session) -> str:
         if m not in world.modules:
             continue
         mod = world.modules[m]
-        zname = world.zones[mod.zone].name
+        zone_known = any(x in disc for x in world.zones[mod.zone].members)
+        zname = (world.zones[mod.zone].name if zone_known
+                 else "an unnamed district")
+
+        def n_(n, word):
+            return f"{n} {word}{'s' if n != 1 else ''}"
+
         if m in disc:
             outs = [f"{e.dst} [{e.kind}]" for e in world.out_edges(m)
                     if e.kind != LAZY or tunnel]
@@ -433,8 +519,9 @@ def render_atlas(world: World, s: Session) -> str:
             info[m] = {"t": f"{m} — {mod.role}, {zname}",
                        "d": mod.doc or (f"~ {mod.gloss} (AI impression)"
                                         if mod.gloss else mod.path),
-                       "s": (f"{mod.loc} lines · {mod.commits} commits · "
-                             f"{mod.authors} authors"
+                       "s": (f"{n_(mod.loc, 'line')} · "
+                             f"{n_(mod.commits, 'commit')} · "
+                             f"{n_(mod.authors, 'author')}"
                              + (f" · born {mod.born}" if mod.born else "")),
                        "i": "imports: " + (", ".join(outs) or "nothing internal")}
         else:
@@ -443,7 +530,8 @@ def render_atlas(world: World, s: Session) -> str:
             # only its file contents (docstring, imports) stay behind a read
             info[m] = {"t": f"{m} — {mod.role or 'worker'}, seen, not yet read",
                        "d": zname,
-                       "s": (f"{mod.commits} commits · {mod.authors} authors"
+                       "s": (f"{n_(mod.commits, 'commit')} · "
+                             f"{n_(mod.authors, 'author')}"
                              + (f" · born {mod.born}" if mod.born else "")),
                        "i": "spyglass it (buzz look) or fly there (buzz go) "
                             "to read its imports"}
@@ -456,6 +544,7 @@ def render_atlas(world: World, s: Session) -> str:
         [[e.src, e.dst, e.kind] for e in world.edges
          if e.src in disc and e.dst in seen
          and (e.kind != LAZY or tunnel)])
+    content_w = max(x + w for x, y, w, h in boxes.values()) + 24
     name = world.repo.rsplit("/", 1)[-1]
     header = (f"THE HIVE · {html.escape(name)} · quests "
               f"{len(s.resolved)}/{len(world.questions)} · modules visited "
@@ -490,9 +579,14 @@ def render_atlas(world: World, s: Session) -> str:
   .bang {{ fill:#e76f51; font-size:13px; font-weight:bold; }}
   .play {{ fill:#e9c46a; font-size:11px; }}
   .hit {{ fill:none; stroke:#e9c46a; stroke-width:2.5; }}
-  #route {{ fill:none; stroke:#e9c46a; stroke-width:2.5; stroke-dasharray:7 4;
-            pointer-events:none; }}
-  #jdot {{ fill:#e9c46a; }}
+  #route {{ pointer-events:none; }}
+  .rseg {{ stroke:#e9c46a; stroke-width:2.5; }}
+  .rseg.lazy {{ stroke:#c77b3f; stroke-dasharray:6 4; }}
+  .rseg.type {{ stroke:#8a8a8a; stroke-dasharray:2 4; }}
+  .rstop {{ fill:none; stroke:#e9c46a; stroke-width:1.4; }}
+  .jdot {{ fill:#e9c46a; }}
+  #bar button.on {{ background:#e9c46a; color:#151310; border-color:#e9c46a;
+    font-weight:bold; }}
   line.top {{ stroke:#6f8f6a; stroke-width:1.1; opacity:.6; }}
   line.tunnel {{ stroke:#c77b3f; stroke-width:1.1; stroke-dasharray:5 3; opacity:.8; }}
   line.typeonly {{ stroke:#666; stroke-width:1; stroke-dasharray:1 3; opacity:.5; }}
@@ -501,7 +595,7 @@ def render_atlas(world: World, s: Session) -> str:
 </style>
 <h1>{header}</h1>
 <div id="bar">
-  <input id="q" placeholder="search a module you have seen..."
+  <input id="q" placeholder="search a seen module..." size="26"
          autocomplete="off">
   <button id="probe" title="click two modules to trace the real import route
 between them - only over edges you have earned sight of">PROBE ROUTE</button>
@@ -509,10 +603,13 @@ between them - only over edges you have earned sight of">PROBE ROUTE</button>
   <span id="probemsg">drag pans · wheel zooms · click a building for its
 dossier · ! marks an open quest's starting tile</span>
 </div>
-<svg id="town" viewBox="0 0 1500 {height}" preserveAspectRatio="xMidYMid meet"
+<svg id="town" viewBox="0 0 {content_w} {height}" preserveAspectRatio="xMidYMid meet"
      xmlns="http://www.w3.org/2000/svg">
+<defs><marker id="rarr" markerWidth="10" markerHeight="10" refX="9"
+ refY="4" orient="auto"><path d="M0,0 L9,4 L0,8" fill="none"
+ stroke="#e9c46a" stroke-width="1.6"/></marker></defs>
 {chr(10).join(parts)}
-<polyline id="route" points=""/>
+<g id="route"></g>
 </svg>
 <div class="legend">
 filled dot = visited · hollow dot = seen · speck = fog · gold ring = boss ·

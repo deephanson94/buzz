@@ -455,7 +455,12 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
                       f"'buzz quest <id>' to take them on")
     elif cmd == "atlas":
         from .atlas import write_atlas
-        p = write_atlas(world, s, game_dir() / "atlas.html")
+        # session-scoped file: two scouts sharing one hive must not
+        # clobber each other's render (a full-clear atlas was destroyed
+        # by a throwaway session's regenerate in round WEBATLAS)
+        sname = os.environ.get("BUZZ_SESSION", "default")
+        fname = "atlas.html" if sname == "default" else f"atlas-{sname}.html"
+        p = write_atlas(world, s, game_dir() / fname)
         print(f"atlas rendered: {p.resolve()}")
         print("open it in a browser; regenerate after moving")
     elif cmd == "recap":
