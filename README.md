@@ -76,6 +76,42 @@ sharing one world - `buzz standings` is the leaderboard across them -
   renders the fog-of-war map as an interactive HTML file with per-module
   dossiers.
 
+## The lore layer (optional): `buzz analyze <repo> --lore`
+
+An LLM reads the map plus the head of each source file and writes a
+semantic layer on top of the mechanical world: lore quests ("where does
+behavior X live?", validated so the answer resolves and never leaks),
+one-line district briefs, and glosses for modules with no docstring.
+Ground truth is never delegated: lore quest answers stay mechanically
+checked, and unverifiable prose is displayed as a 0-XP, clearly-marked
+"scout's impression".
+
+Any of four transports works - the first one configured wins:
+
+```bash
+# 1. Any command at all: brief on stdin, JSON on stdout
+export BUZZ_LORE_CMD="my-llm-wrapper --flags"
+
+# 2. Any OpenAI-compatible endpoint (a company gateway, Ollama, vLLM...)
+#    - stdlib only, no extra install
+export BUZZ_LORE_URL="https://my-gateway.example.com/v1"
+export BUZZ_LORE_MODEL="my/model-id"
+export BUZZ_LORE_KEY="..."          # optional; sent as a Bearer token
+
+# 3. The anthropic SDK: pip install -e ".[lore]" + ANTHROPIC_API_KEY
+
+# 4. The `claude` CLI on PATH (used non-interactively)
+```
+
+No transport available, or the call fails? `--lore` degrades to a plain
+world with a printed hint - it never breaks `analyze`. There is also a
+fully offline path: `buzz author export` writes the brief to a file,
+paste it into any chat UI, then `buzz author apply` ingests the JSON.
+
+Note what leaves the machine: the brief contains module names, the first
+~30 lines of each source file, and commit subjects - point `--lore` only
+at an endpoint you trust with that.
+
 ## Ground truth
 
 Every answer is verified against the AST import graph or git history —

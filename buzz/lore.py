@@ -12,9 +12,10 @@ stay mechanically checkable; briefs and glosses are flavor, displayed as
 clearly-marked "scout's impressions", and worth 0 XP.
 
 Transports, in order: BUZZ_LORE_CMD (any command: brief on stdin, JSON on
-stdout), the `anthropic` Python SDK (any credentials the SDK resolves),
-then the `claude` CLI in non-interactive mode. All failures degrade to a
-plain world plus a printed hint - --lore must never break analyze.
+stdout), BUZZ_LORE_URL (any OpenAI-compatible /v1 endpoint, stdlib only),
+the `anthropic` Python SDK (any credentials the SDK resolves), then the
+`claude` CLI in non-interactive mode. All failures degrade to a plain
+world plus a printed hint - --lore must never break analyze.
 """
 from __future__ import annotations
 
@@ -105,6 +106,47 @@ def _call_cli(prompt: str) -> str:
     return r.stdout
 
 
+def _call_openai_compat(prompt: str) -> str:
+    """Any OpenAI-compatible chat endpoint (a company gateway, Ollama,
+    vLLM, ...) via BUZZ_LORE_URL + BUZZ_LORE_MODEL (+ optional
+    BUZZ_LORE_KEY). Stdlib only - no new dependency."""
+    import urllib.error
+    import urllib.request
+    url = os.environ["BUZZ_LORE_URL"]
+    model = os.environ.get("BUZZ_LORE_MODEL")
+    if not model:
+        raise LoreUnavailable("BUZZ_LORE_URL is set but BUZZ_LORE_MODEL "
+                              "is not - the gateway needs a model id")
+    endpoint = url.rstrip("/") + "/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    key = os.environ.get("BUZZ_LORE_KEY")
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    req = urllib.request.Request(endpoint, headers=headers, data=json.dumps({
+        "model": model, "stream": False,
+        "messages": [{"role": "user", "content": prompt}],
+    }).encode())
+    try:
+        with urllib.request.urlopen(req, timeout=600) as resp:
+            data = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode()[:200]
+        except Exception:
+            detail = ""
+        raise LoreUnavailable(f"{endpoint} returned HTTP {e.code}: {detail}")
+    except Exception as e:
+        raise LoreUnavailable(f"could not reach {endpoint}: {e}")
+    try:
+        content = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError):
+        content = None
+    if not isinstance(content, str) or not content.strip():
+        raise LoreUnavailable(f"unexpected response shape from {endpoint} "
+                              f"(no choices[0].message.content text)")
+    return content
+
+
 def _call_custom(cmd: str, prompt: str) -> str:
     r = subprocess.run(cmd, shell=True, input=prompt,
                        capture_output=True, text=True, timeout=600)
@@ -118,6 +160,10 @@ def _transport(prompt: str) -> str:
     cmd = os.environ.get("BUZZ_LORE_CMD")
     if cmd:
         return _call_custom(cmd, prompt)
+    if os.environ.get("BUZZ_LORE_URL"):
+        # an explicitly configured gateway never falls back to the SDK -
+        # failing loudly beats silently talking to a different provider
+        return _call_openai_compat(prompt)
     errors = []
     for fn in (_call_sdk, _call_cli):
         try:
@@ -127,9 +173,10 @@ def _transport(prompt: str) -> str:
     raise LoreUnavailable(
         "; ".join(errors)
         + ". Fix: `pip install anthropic` + credentials, install the "
-        "`claude` CLI, or set BUZZ_LORE_CMD to any command that reads the "
-        "brief on stdin and prints the JSON. Manual path: buzz author "
-        "export / apply.")
+        "`claude` CLI, set BUZZ_LORE_URL/BUZZ_LORE_MODEL[/BUZZ_LORE_KEY] "
+        "to an OpenAI-compatible endpoint, or set BUZZ_LORE_CMD to any "
+        "command that reads the brief on stdin and prints the JSON. "
+        "Manual path: buzz author export / apply.")
 
 
 def _parse(raw: str) -> dict:
