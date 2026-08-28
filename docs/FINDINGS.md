@@ -212,6 +212,27 @@ needs one enforcement point per CLASS of output (names, prose,
 counts, resolution), and a confirmation round that keeps finding new
 true bugs is the instrument working, not failing.
 
+**Round PROSE + round FOCUS** (2026-08-28, owner-dogfood-driven, one
+scout each). PROSE: the owner read the big-repo quests as "a bit AI
+(eg. load-bearing)". Diagnosis: the epigram opener - a portentous
+fragment before every question ("The gate.", "Storm warning.", "The
+hive remembers a wound.") - plus purple idioms; and the lore voice
+contract was literally instructing the author model into the tic
+("open each prompt with one flavorful beat"). A scout-impatient
+review of the rewrite held round 1 by catching four relapses under
+new masks ("Git remembers." = the killed fragment-sting relocated);
+round 2 shipped. Lesson: banning a style by example is weaker than
+banning the pattern - the tic re-emerges anywhere it isn't named.
+FOCUS: "after my buzz edges, i forgot the quest id that im on" -
+the game had no current-quest concept. Viewing a quest now tracks
+it (prompt becomes `buzz [q6]>`; bare quest/hint/answer target it;
+explicit id wins; id-shaped typos refused; resolve clears). Scout
+verdict ship, purpose 8, zero bugs. The round's real find: `buzz
+play` had ALWAYS silently reset the session (new_session
+unconditionally) - re-entering via play wiped a run's XP; likely
+behind earlier "state loss" reports. play now resumes (the exam's
+W2 fix pattern); fresh runs are explicit (new BUZZ_SESSION).
+
 **Learning met the bar** (8.00 across four separate rounds, both repos;
 every claim graph-, git-, or source-checkable). **Continue peaked at 7.17
 (round 10) and plateaued in the 6-7.2 band** with round-to-round noise of
