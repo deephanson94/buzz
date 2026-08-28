@@ -1015,3 +1015,21 @@ def test_badges_earned(world):
     assert "Clean Sweep" not in [n for n, _ in earned(world, s)]
     s.resolved = {q: "correct" for q in world.questions}
     assert "Clean Sweep" in [n for n, _ in earned(world, s)]
+
+
+def test_atlas_interactive_fog_safe(world):
+    from buzz.atlas import render_atlas
+    s = engine.new_session(world)
+    page = render_atlas(world, s)
+    # the interactive layer ships
+    for needle in ("PROBE ROUTE", "var NODES=", "var EDGES=", "#town"):
+        assert needle in page
+    # fog: no unseen module's name reaches the file, in data or markup
+    unseen = set(world.modules) - set(s.seen)
+    for m in unseen:
+        assert f'"{m}"' not in page and f">{m}<" not in page
+    # edges are earned: only sources the session has READ are embedded
+    import json as _json, re
+    edges = _json.loads(re.search(r"var EDGES=(\[.*?\]);", page).group(1))
+    assert all(src in s.discovered for src, _dst, _k in edges)
+    assert all(dst in s.seen for _src, dst, _k in edges)
