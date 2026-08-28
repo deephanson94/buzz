@@ -451,6 +451,19 @@ def _main(scr, world: World, s: Session, save, sessions_dir=None):
         elif k == ord("e"):
             zid = (world.modules[here_m].zone if here_m
                    else world.modules[s.here].zone)
+            # standing on a tile that starts exactly one open quest: track
+            # it, so the shell you answer in already has the id in its
+            # prompt (the loop the first-visit card teaches)
+            if here_m:
+                mine = [q.id for q in world.questions.values()
+                        if q.id not in s.resolved
+                        and here_m == (q.truth.get("src")
+                                       or q.truth.get("target")
+                                       or q.truth.get("anchor")
+                                       or q.truth.get("a"))]
+                if len(mine) == 1:
+                    s.focus = mine[0]
+                    save(s)
             if _overlay(scr,
                         render.render_quests(world, s, zid).splitlines(),
                         title="quests here (answer them in the shell)"):

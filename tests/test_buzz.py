@@ -854,6 +854,30 @@ def test_session_roundtrip_with_whispers(tmp_path):
     s.save(p)
     s2 = Session.load(p)
     assert s2.whispers == ["a", "b"]
+
+
+def test_quest_focus(world, capsys):
+    """Viewing a quest tracks it; bare quest/hint/answer target the
+    tracked quest; a typo'd id is refused, never swallowed as an answer;
+    resolving clears the focus."""
+    from buzz.cli import dispatch
+    s = engine.new_session(world)
+    q = next(q for q in world.questions.values() if q.qtype == "cycle")
+    dispatch(world, s, "quest", [q.id])
+    assert s.focus == q.id
+    dispatch(world, s, "quest", [])           # bare quest reprints, no error
+    dispatch(world, s, "hint", [])            # bare hint targets the focus
+    assert s.hints.get(q.id) == 1
+    with pytest.raises(engine.GameError):     # id-shaped typo is a typo
+        dispatch(world, s, "answer", ["q999", "render"])
+    assert q.id not in s.resolved
+    dispatch(world, s, "answer", ["render", "core"])  # id omitted: focus
+    assert s.resolved.get(q.id) == "correct"
+    assert s.focus == ""                      # resolved -> nothing tracked
+    # focus survives a save/load round trip like any session field
+    capsys.readouterr()
+
+
 def test_wanted_daily(world):
     from buzz import wanted
     s = engine.new_session(world)

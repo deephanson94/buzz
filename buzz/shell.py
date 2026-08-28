@@ -120,7 +120,11 @@ def run_shell(world: World, s: Session, save) -> None:
             print(cur)
             last_hud = cur
         try:
-            line = input(paint("buzz> ", "gold"))
+            # the tracked quest lives in the prompt itself: always visible,
+            # zero extra lines (dogfood: "after buzz edges I forgot the
+            # quest id I'm on")
+            ptxt = f"buzz [{s.focus}]> " if s.focus else "buzz> "
+            line = input(paint(ptxt, "gold"))
         except (EOFError, KeyboardInterrupt):
             print()
             break

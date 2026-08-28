@@ -330,7 +330,11 @@ def render_status(world: World, s: Session) -> str:
     clean = sum(1 for qid, v in s.resolved.items()
                 if v == "correct" and not s.hints.get(qid)
                 and not s.tries.get(qid))
-    lines = [
+    lines = []
+    if s.focus and s.focus not in s.resolved:
+        lines.append(f"tracking: {s.focus} - 'quest' reprints it, bare "
+                     f"'hint'/'answer <...>' target it")
+    lines += [
         f"XP {s.xp} (base pool {total_xp}; streak bonuses stack on top) "
         f"| rank: {rank(world, s)} (rank only ever climbs)"
         + (f" | solved: {solved}/{attempted} attempted"
@@ -439,7 +443,9 @@ exploring (free, no XP):
 
 quests (the only source of XP):
   buzz quests                  quests in your current zone
-  buzz quest <id>              read one quest
+  buzz quest <id>              read one quest (and track it: the shell
+                               prompt shows the id; bare 'quest', 'hint'
+                               and 'answer <...>' then mean that quest)
   buzz answer <id> walk m1 m2 ...      trace an import chain
   buzz answer <id> edge <importer> <imported>   draw a dependency edge
   buzz answer <id> region m1 m2 ...    select a blast radius
