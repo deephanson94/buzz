@@ -856,6 +856,49 @@ def test_session_roundtrip_with_whispers(tmp_path):
     assert s2.whispers == ["a", "b"]
 
 
+def test_lore_openai_compat_transport(monkeypatch):
+    """BUZZ_LORE_URL drives any OpenAI-compatible endpoint via stdlib:
+    right route, right body, Bearer auth, content extracted - and an
+    explicit URL never falls back to the SDK."""
+    import io
+    import json
+    import urllib.request
+    from buzz import lore
+
+    seen = {}
+
+    class FakeResp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=None):
+        seen["url"] = req.full_url
+        seen["auth"] = req.get_header("Authorization")
+        seen["body"] = json.loads(req.data.decode())
+        return FakeResp(json.dumps({"choices": [{"message": {
+            "content": '{"quests": []}'}}]}).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setenv("BUZZ_LORE_URL", "https://gw.example.com/v1/")
+    monkeypatch.setenv("BUZZ_LORE_MODEL", "mtk/glm-5.2")
+    monkeypatch.setenv("BUZZ_LORE_KEY", "sekrit")
+    monkeypatch.delenv("BUZZ_LORE_CMD", raising=False)
+    out = lore._transport("the brief")
+    assert out == '{"quests": []}'
+    assert seen["url"] == "https://gw.example.com/v1/chat/completions"
+    assert seen["auth"] == "Bearer sekrit"
+    assert seen["body"]["model"] == "mtk/glm-5.2"
+    assert seen["body"]["messages"] == [
+        {"role": "user", "content": "the brief"}]
+    # a configured URL with no model is a loud config error, not a fallback
+    monkeypatch.delenv("BUZZ_LORE_MODEL")
+    with pytest.raises(lore.LoreUnavailable, match="BUZZ_LORE_MODEL"):
+        lore._transport("the brief")
+
+
 def test_quest_focus(world, capsys):
     """Viewing a quest tracks it; bare quest/hint/answer target the
     tracked quest; a typo'd id is refused, never swallowed as an answer;
