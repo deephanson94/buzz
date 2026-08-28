@@ -102,7 +102,7 @@ def gen_walk(world: World, G: nx.DiGraph, zone_id: str, count: int = 2,
             f"Walk the import chain that connects them: start at {a}, end at "
             f"{b}, naming each module along the way. Any real chain of "
             f"imports counts.",
-            f"The archives record that a bad release of {b} once took "
+            f"A bad release of {b} once took "
             f"{a} down with it - though {a} never names {b} anywhere in its "
             f"file. Retrace the supply line that made it possible: walk the "
             f"imports from {a} all the way to {b}.",
@@ -268,7 +268,7 @@ def gen_cycle(world: World, Gtop: nx.DiGraph, zone_id: str,
         used.add(_sig("cycle", e.src, e.dst))
         _q(world, zone_id, "cycle", "walk",
            f"A sealed tunnel: {e.src} imports {e.dst} only INSIDE a function, "
-           f"not at the top of the file. That is a design decision, not an accident - "
+           f"not at the top of the file - because "
            f"a top-level import would create an import cycle. Prove it: walk the "
            f"top-level import chain from {e.dst} back to {e.src}. "
            f"Solving this unlocks tunnel-vision (travel through all sealed tunnels).",
@@ -322,12 +322,12 @@ def gen_ghost(world: World, zone_id: str, boss: bool = False,
             f"function-level, or type-hint) connects {x} to it in either "
             f"direction, yet git says they change together constantly - "
             f"a ghost edge the import graph cannot see.",
-            f"The old bees whisper that {x} has a secret companion: a module "
-            f"it never imports and is never imported by, yet the two have "
-            f"changed together for years.",
+            f"The old bees say {x} has a partner: a module "
+            f"it never imports and is never imported by, yet the two keep "
+            f"changing together.",
             f"Someone keeps editing two files in the same commit: {x}, and a "
-            f"module git says it has never once imported. Find the silent "
-            f"partner.",
+            f"module git says it has never once imported. Find that "
+            f"module.",
         ])
         _q(world, zone_id, "ghost", "edge",
            f"{lead} Suspects: {', '.join(suspects)}. Investigate with "
@@ -417,9 +417,9 @@ def gen_elder(world: World, zone_id: str, used: set | None = None) -> int:
     used.add(_sig("elder", zone_id))
     _q(world, zone_id, "elder", "edge",
        f"Two residents of {zone.name} both claim to be "
-       f"the district's founder: {min(old, new)} and {max(old, new)}. Git "
-       f"remembers. Answer with the elder first, the newcomer second: "
-       f"answer <older> <newer>.",
+       f"the district's founder: {min(old, new)} and {max(old, new)}. The "
+       f"git history settles it. Answer with the elder first, the newcomer "
+       f"second: answer <older> <newer>.",
        {"src": old, "dst": new,
         "born_src": world.modules[old].born, "born_dst": world.modules[new].born},
        xp=15, distance=2)
@@ -441,8 +441,8 @@ def gen_hotspot(world: World, zone_id: str, used: set | None = None) -> int:
     used.add(_sig("hotspot", zone_id))
     _q(world, zone_id, "hotspot", "point",
        f"One building in {zone.name} has been rebuilt "
-       f"far more often than any other - the district's churn hotspot, where "
-       f"bugs and features keep landing. Point at it: answer <module>.",
+       f"far more often than any other - the district's churn hotspot. "
+       f"Point at it: answer <module>.",
        {"module": top, "commits": c1},
        xp=15, distance=len(zone.members) // 2 + 1)
     return 1
@@ -499,9 +499,9 @@ def gen_patch(world: World, zone_id: str, used: set | None = None) -> int:
     _q(world, zone_id, "patch", "point",
        f"A page from the hive's chronicle, {ev['date']}: "
        f"\"{ev['subject']}\". That patch touched {m} - and exactly ONE "
-       f"other module in the whole hive had to move in the very same "
-       f"commit. Suspects: {', '.join(suspects)}. Unfamiliar names? "
-       f"'buzz look <suspect>' tells you what each one is. Then probe each "
+       f"other module had to move in the same "
+       f"commit. Suspects: {', '.join(suspects)} ('buzz look <suspect>' "
+       f"describes each one). Probe each "
        f"pair for shared patches ('buzz probe {m} <suspect>') and match "
        f"the DATE. Point at the companion: answer <module>.",
        {"module": other, "anchor": m, "subject": ev["subject"],
@@ -528,8 +528,8 @@ def gen_scar(world: World, zone_id: str, used: set | None = None) -> int:
         used.add(_sig("scar", m))
         _q(world, zone_id, "scar", "point",
            f"On {ev['date']} a change here was "
-           f"ROLLED BACK: \"{ev['subject']}\". Somewhere in "
-           f"{zone.name} stands the module that bears the scar. Dig "
+           f"ROLLED BACK: \"{ev['subject']}\". Find the module in "
+           f"{zone.name} it happened to. Dig "
            f"through the history (git is fair game) and point at it: "
            f"answer <module>.",
            {"module": m, "subject": ev["subject"], "date": ev["date"]},
@@ -914,8 +914,8 @@ def gen_journey(world: World, count: int = 3,
         used.add(_sig("journey-dst", dst))
         used.add(_sig("journey-nodes", *path))
         _q(world, world.modules[e].zone, "journey", "walk",
-           f"A run begins at {e} - and by the time the work "
-           f"is done, code in {dst} has executed. Follow the WORK, not the "
+           f"A run begins at {e} and ends with code in {dst} "
+           f"executing. Follow the WORK, not the "
            f"imports: name the stations in order from {e} to {dst}, where "
            f"every hop is a real function CALL from one module into the "
            f"next. Evidence: 'buzz flow <module>' shows who a file you "
