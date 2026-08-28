@@ -37,10 +37,18 @@ def render_recap(world: World, s: Session) -> str:
         lines += [f"{name}: {doc}", ""]
     # one line per district actually reached - built from the docstrings and
     # roles this run surfaced, so a newcomer gets the shape, not a quest log
+    from .render import known_zones, masked_modules
+    known = known_zones(world, s)
+    masked = masked_modules(world, s)
     for z in sorted(world.zones.values(), key=lambda z: z.order):
-        hit = [m for m in sorted(z.members) if m in seen]
+        # ONE naming predicate everywhere (round c7: recap was a
+        # one-command answer key for both place quests), and a module
+        # whose placement is an open mystery belongs to no roster
+        hit = [m for m in sorted(z.members)
+               if m in seen and m not in masked]
         if not hit:
             continue  # still under fog - the notes only report what was seen
+        zname = z.name if z.id in known else f"an unnamed district ({z.id})"
         notable = sorted(hit, key=lambda m: (-world.modules[m].in_degree,
                                              -world.modules[m].commits))[:4]
         bits = []
@@ -50,8 +58,8 @@ def render_recap(world: World, s: Session) -> str:
             doc = f' "{mod.doc}"' if m in disc and mod.doc else ""
             bits.append(f"{m}{tag}{doc}")
         impression = (f" _{z.brief}_ (scout's impression, AI-written)."
-                      if z.brief else "")
-        lines.append(f"- **{z.name}** -{impression} {len(hit)}/"
+                      if z.brief and z.id in known else "")
+        lines.append(f"- **{zname}** -{impression} {len(hit)}/"
                      f"{len(z.members)} modules surveyed. "
                      f"Key parts: {'; '.join(bits)}.")
     lines += [

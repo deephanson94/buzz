@@ -114,13 +114,16 @@ def _try_next(world: World, s: Session) -> str:
            and any(q.zone == z.id and q.id not in s.resolved
                    for q in world.questions.values())]
     if nxt:
+        from .render import known_zones
+        nname = (nxt[0].name if nxt[0].id in known_zones(world, s)
+                 else f"an unexplored district ({nxt[0].id})")
         target = max(nxt[0].members, key=lambda m: world.modules[m].pagerank)
         if target not in s.seen:
             # never suggest a command that will bounce off the fog
             s.seen.append(target)
             return (f"this zone is done - your scouts point the way to "
-                    f"{nxt[0].name}: buzz go {target}")
-        return (f"this zone is done - head for {nxt[0].name} "
+                    f"{nname}: buzz go {target}")
+        return (f"this zone is done - head for {nname} "
                 f"(e.g. buzz go {target}, or explore with buzz map)")
     return "all zones cleared - buzz status"
 
@@ -416,8 +419,17 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
                 continue
             solved = sum(1 for v in other.resolved.values() if v == "correct")
             here = other.here
-            at = (world.zones[world.modules[here].zone].name
-                  if here in world.modules else "?")
+            # the district name is masked by what the VIEWING session
+            # has earned - a shared leaderboard was a turn-zero reveal
+            # of five district names (round c7)
+            from .render import known_zones as _kz2
+            _viewer_known = _kz2(world, s)
+            if here in world.modules:
+                _hz = world.modules[here].zone
+                at = (world.zones[_hz].name if _hz in _viewer_known
+                      else f"??? ({_hz})")
+            else:
+                at = "?"
             rows.append((other.xp, p.stem, engine.rank(world, other),
                          solved, len(other.resolved),
                          len(other.discovered), other.streak,
@@ -474,7 +486,10 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
     elif cmd == "recap":
         from .recap import render_recap
         text = render_recap(world, s)
-        p = game_dir() / "field_notes.md"
+        sname = os.environ.get("BUZZ_SESSION", "default")
+        fname = ("field_notes.md" if sname == "default"
+                 else f"field_notes-{sname}.md")
+        p = game_dir() / fname
         p.write_text(text)
         print(text)
         print(f"\n(saved to {p.resolve()})")

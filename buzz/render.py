@@ -255,7 +255,15 @@ def render_question(world: World, s: Session, q) -> str:
         # instead of buried in help (a panel found it too late)
         evidence = (f"evidence: 'buzz edges {q.zone}' dumps this district's "
                     f"import edges, tallied")
-    lines = [f"[{q.id}] ({q.qtype}, {q.xp} XP, status: {st})", "", q.prompt,
+    # generation bakes district names into quest prose; display is
+    # where the fog lives (round c7: 'quest q26' named The Defaults
+    # Atrium on a virgin session)
+    prompt = q.prompt
+    known = known_zones(world, s)
+    for z2 in world.zones.values():
+        if z2.id not in known and z2.name:
+            prompt = prompt.replace(z2.name, f"district {z2.id} (unexplored)")
+    lines = [f"[{q.id}] ({q.qtype}, {q.xp} XP, status: {st})", "", prompt,
              *([rule] if rule else []),
              *([evidence] if evidence else []), "",
              f"answer syntax: {syntax}",
@@ -371,6 +379,8 @@ exploring (free, no XP):
   buzz chronicle <module>      the module's focused commits and reverts
                                from git history
   buzz who <module>            who imports it, across the whole hive
+  buzz flow <module>           where a read file's work GOES at runtime
+                               (real calls - the evidence for journeys)
   buzz atlas                   render the hive as a visual map (HTML file
                                with real fog-of-war - open in a browser)
   buzz notes                   the transferable lessons banked so far,
