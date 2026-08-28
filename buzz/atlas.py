@@ -15,6 +15,23 @@ from pathlib import Path
 from .model import World, Session, TOP, LAZY, TYPE, ROLE_BOSS, ROLE_BEDROCK, \
     ROLE_GATE, ROLE_SWAMP
 from .engine import TUNNEL, coverage, rank
+from . import render
+
+def _disp_names(world: World) -> dict:
+    """Short display names, with the parent segment restored whenever a
+    bare tail collides ('backend' three ways) - shared by every diagram
+    so the town and the strata stop disagreeing. Truncation is honest:
+    a cut name carries an ellipsis."""
+    from collections import Counter
+    tails = Counter(m.split(".")[-1] for m in world.modules)
+    out = {}
+    for m in world.modules:
+        tail = m.split(".")[-1]
+        if tails[tail] > 1 and "." in m:
+            tail = ".".join(m.split(".")[-2:])
+        out[m] = tail if len(tail) <= 16 else tail[:15] + "…"
+    return out
+
 
 ROLE_COLOR = {ROLE_BOSS: "#d4a017", ROLE_BEDROCK: "#4a90d9",
               ROLE_GATE: "#b0568f", ROLE_SWAMP: "#5f9e6e"}
@@ -96,9 +113,10 @@ def _strata_svg(world: World, s: Session) -> str:
         label = ("foundation - imports nothing internal" if l == 0 else
                  f"layer {l}")
         parts.append(f'<text x="32" y="{y + 27}" class="ztitle">{label}</text>')
-        x = 260
+        names = _disp_names(world)
+        x = 330
         for m in sorted(vis, key=lambda m: -world.modules[m].pagerank):
-            if x > width - 120:
+            if x > width - 140:
                 break
             mod = world.modules[m]
             color = ROLE_COLOR.get(mod.role, "#8a8a8a")
@@ -107,8 +125,8 @@ def _strata_svg(world: World, s: Session) -> str:
                 f'<circle class="node" data-m="{html.escape(m)}" cx="{x}" '
                 f'cy="{y + 18}" r="6" fill="{fill}" stroke="{color}"/>')
             parts.append(f'<text x="{x}" y="{y + 38}" class="mlabel">'
-                         f'{html.escape(m.split(".")[-1][:11])}</text>')
-            x += max(30, 9 * min(11, len(m.split(".")[-1])) + 12)
+                         f'{html.escape(names[m])}</text>')
+            x += max(34, 8 * min(16, len(names[m])) + 14)
         y += 56
     return (f'<h1>THE STRATA - who rests on whom</h1>'
             f'<div class="legend">the classic layers diagram, computed from '
@@ -212,6 +230,7 @@ town.addEventListener('wheel', function (e) {
 document.getElementById('reset').addEventListener('click', function () {
   vb = vb0.slice(); setVB(); clearRoute(); clearHit();
   probing = false; probeBtn.classList.remove('on');
+  document.getElementById('q').value = '';
   msg.textContent = HINT;
 });
 
@@ -314,11 +333,12 @@ function drawRoute(path) {
 function probeClick(m) {
   if (!probeA) { probeA = m;
     msg.textContent = 'from ' + m + ' - now click the destination'; return; }
-  var a = probeA, b = m; probeA = null;
-  if (a === b) {
-    msg.textContent = m + ' is both ends - click two DIFFERENT modules';
+  if (probeA === m) {
+    msg.textContent = m + ' is both ends - click a DIFFERENT second module '
+      + '(still from ' + m + ')';
     return;
   }
+  var a = probeA, b = m; probeA = null;
   var path = bfs(a, b), flipped = false;
   if (!path) { path = bfs(b, a); flipped = true; }
   if (!path) {
@@ -401,6 +421,20 @@ def render_atlas(world: World, s: Session) -> str:
     d, total = coverage(world, s)
     seen, disc = set(s.seen), set(s.discovered)
     tunnel = TUNNEL in s.abilities
+
+    # an OPEN place quest means this module's district is the answer -
+    # so nothing on the page may place it: not its node, not an edge
+    # endpoint, not its dossier (the staff audit answered q13 straight
+    # off the page). Masked modules live in a limbo strip; overwriting
+    # pos here moves EVERY consumer - edges, nodes, search, probe.
+    masked = render.masked_modules(world, s) & seen
+    limbo_y = height - 4
+    limbo_pos = {}
+    for i, m in enumerate(sorted(masked)):
+        limbo_pos[m] = (140 + i * 150, limbo_y + 36)
+        pos[m] = (limbo_pos[m][0], limbo_pos[m][1] + 6)
+    if masked:
+        height += 70
     parts = []
 
     # edges first (under nodes); fog rule: draw only when the SOURCE is
@@ -432,16 +466,10 @@ def render_atlas(world: World, s: Session) -> str:
         if primary in seen:
             marks.add(primary)
 
-    # duplicate short names ('backend' three times) get their parent
-    # segment back so the map stays unambiguous
-    from collections import Counter
-    tails = Counter(m.split(".")[-1] for m in world.modules)
+    names = _disp_names(world)
 
     def disp(m):
-        tail = m.split(".")[-1]
-        if tails[tail] > 1 and "." in m:
-            tail = ".".join(m.split(".")[-2:])
-        return tail[:16]
+        return names[m]
 
     # rects first, then titles and nodes - a later district's rect must
     # never paint over an earlier one's title (staff audit)
@@ -461,13 +489,21 @@ def render_atlas(world: World, s: Session) -> str:
         known = any(m in disc for m in z.members)
         title = z.name if known else "??? unexplored district"
         zq = [q for q in world.questions.values() if q.zone == z.id and not q.boss]
+        nboss = sum(1 for q in world.questions.values()
+                    if q.zone == z.id and q.boss)
         done = sum(1 for q in zq if q.id in s.resolved)
         badge = " ✦ CLEARED" if z.id in s.cleared else (
             f"  {done}/{len(zq)} quests" if zq else "")
+        if nboss and z.id not in s.cleared:
+            badge += f" +{nboss} boss"
+        full = f"{title}{badge}"
+        max_chars = max(8, (w - 20) // 8)  # never overrun the box
+        if len(full) > max_chars:
+            full = full[: max_chars - 1] + "…"
         parts.append(
             f'<text x="{x + 12}" y="{y + 24}" class="ztitle">'
-            f'{html.escape(title)}{html.escape(badge)}</text>')
-        for mi, m in enumerate(z.members):
+            f'{html.escape(full)}</text>')
+        for mi, m in enumerate(mm for mm in z.members if mm not in masked):
             cx, cy = pos[m]
             mod = world.modules[m]
             color = ROLE_COLOR.get(mod.role, "#8a8a8a")
@@ -480,7 +516,8 @@ def render_atlas(world: World, s: Session) -> str:
                 f'<circle class="node" data-m="{html.escape(m)}" '
                 f'cx="{cx}" cy="{cy}" r="{9 if mod.role == ROLE_BOSS else 7}" '
                 f'fill="{fill}" stroke="{color}"{here}>'
-                f'<title>{html.escape(m)} ({mod.role}, {mod.commits} commits)</title></circle>')
+                f'<title>{html.escape(m)} ({mod.role}, {mod.commits} '
+                f'commit{"s" if mod.commits != 1 else ""})</title></circle>')
             dy = 20 if mi % 2 == 0 else 31
             parts.append(
                 f'<text x="{cx}" y="{cy + dy}" class="mlabel">'
@@ -492,6 +529,27 @@ def render_atlas(world: World, s: Session) -> str:
                              f'class="mark"/>')
                 parts.append(f'<text x="{cx + 12}" y="{cy - 10}" '
                              f'class="bang">!</text>')
+    if masked:
+        overlay.append(
+            f'<rect x="20" y="{limbo_y + 8}" width="{max(300, 140 * len(masked) + 120)}" '
+            f'height="56" rx="10" class="zone" stroke-dasharray="6 4"/>')
+        overlay.append(
+            f'<text x="32" y="{limbo_y + 28}" class="ztitle">unplaced '
+            f'sightings - district unknown until a scout places them</text>')
+        for m in sorted(masked):
+            cx, cy = pos[m]
+            mod = world.modules[m]
+            color = ROLE_COLOR.get(mod.role, "#8a8a8a")
+            fill = color if m in disc else "none"
+            overlay.append(
+                f'<circle class="node" data-m="{html.escape(m)}" cx="{cx}" '
+                f'cy="{cy}" r="7" fill="{fill}" stroke="{color}">'
+                f'<title>{html.escape(m)} - unplaced</title></circle>')
+            overlay.append(f'<text x="{cx}" y="{cy + 20}" class="mlabel">'
+                           f'{html.escape(disp(m))}</text>')
+            if m in marks:
+                overlay.append(f'<circle cx="{cx}" cy="{cy}" r="13" '
+                               f'class="mark"/>')
     parts = base_parts + overlay  # edges+rects below, titles+nodes above
 
     # per-node dossier for the click panel - fog-respecting: discovered
@@ -505,6 +563,9 @@ def render_atlas(world: World, s: Session) -> str:
         zone_known = any(x in disc for x in world.zones[mod.zone].members)
         zname = (world.zones[mod.zone].name if zone_known
                  else "an unnamed district")
+        if m in masked:
+            zname = "??? - a scout must place this module"
+        
 
         def n_(n, word):
             return f"{n} {word}{'s' if n != 1 else ''}"
@@ -559,7 +620,8 @@ def render_atlas(world: World, s: Session) -> str:
          margin:0; padding:16px; }}
   h1 {{ font-size:15px; letter-spacing:.06em; color:#e9c46a; }}
   svg {{ width:100%; height:auto; }}
-  #town {{ height:72vh; cursor:grab; background:#171411; border:1px solid #33302a;
+  #town {{ height:auto; aspect-ratio:{content_w}/{height}; max-height:78vh;
+           cursor:grab; background:#171411; border:1px solid #33302a;
            border-radius:10px; }}
   #town:active {{ cursor:grabbing; }}
   #bar {{ display:flex; gap:8px; align-items:center; margin:8px 0; flex-wrap:wrap; }}
@@ -572,8 +634,11 @@ def render_atlas(world: World, s: Session) -> str:
   .zone {{ fill:#1f1b16; stroke:#4d4436; stroke-width:1.4; }}
   .zone.cleared {{ stroke:#e9c46a; }}
   .ztitle {{ fill:#cdbfa3; font-size:13px; font-weight:bold; }}
-  .mlabel {{ fill:#9a8f7a; font-size:9px; text-anchor:middle; }}
-  .you {{ fill:#e9c46a; font-size:9px; font-weight:bold; text-anchor:middle; }}
+  .mlabel {{ fill:#9a8f7a; font-size:9px; text-anchor:middle;
+    paint-order:stroke; stroke:#171411; stroke-width:3px; }}
+  .you {{ fill:#e9c46a; font-size:9px; font-weight:bold; text-anchor:middle;
+    paint-order:stroke; stroke:#171411; stroke-width:3px; }}
+  .ztitle {{ paint-order:stroke; stroke:#171411; stroke-width:4px; }}
   .fog {{ fill:#33302a; }}
   .mark {{ fill:none; stroke:#e76f51; stroke-width:1.6; }}
   .bang {{ fill:#e76f51; font-size:13px; font-weight:bold; }}
