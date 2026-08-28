@@ -120,7 +120,10 @@ def _try_next(world: World, s: Session) -> str:
         from .render import known_zones
         nname = (nxt[0].name if nxt[0].id in known_zones(world, s)
                  else f"an unexplored district ({nxt[0].id})")
-        target = max(nxt[0].members, key=lambda m: world.modules[m].pagerank)
+        from .render import masked_modules as _mm
+        placed = [m for m in nxt[0].members
+                  if m not in _mm(world, s)] or nxt[0].members
+        target = max(placed, key=lambda m: world.modules[m].pagerank)
         if target not in s.seen:
             # never suggest a command that will bounce off the fog
             s.seen.append(target)
@@ -280,23 +283,22 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
             print("every quest in the hive (id / type / XP / zone / status):")
             from .render import known_zones as _kz
             _known = _kz(world, s)
-            # open place quests print in a TRAILING bucket: sorted into
-            # their true zone's contiguous run, list position itself was
-            # the answer (round c10's block-ordering oracle)
+            # ID order, not zone order: rows grouped by district read as
+            # a roster of every fogged zone (round c12); ids are a
+            # sha-seeded permutation, so id order carries nothing
             deferred = []
-            for z in sorted(world.zones.values(), key=lambda z: z.order):
-                zname = z.name if z.id in _known else "???"
-                for q in sorted((q for q in world.questions.values()
-                                 if q.zone == z.id),
-                                key=lambda q: (q.boss, q.id)):
-                    st = s.resolved.get(q.id, "open")
-                    boss = " [BOSS]" if q.boss else ""
-                    if q.qtype == "place" and st == "open":
-                        deferred.append(q)
-                        continue
-                    print(f"  {q.id:5} {q.qtype:8} {q.xp:>3}xp  "
-                          f"{zname}{boss}  [{st}]")
-            for q in sorted(deferred, key=lambda q: q.id):
+            for q in sorted(world.questions.values(),
+                            key=lambda q: int(q.id[1:])):
+                st = s.resolved.get(q.id, "open")
+                boss = " [BOSS]" if q.boss else ""
+                if q.qtype == "place" and st == "open":
+                    deferred.append(q)
+                    continue
+                zname = (world.zones[q.zone].name
+                         if q.zone in _known else "???")
+                print(f"  {q.id:5} {q.qtype:8} {q.xp:>3}xp  "
+                      f"{zname}{boss}  [{st}]")
+            for q in sorted(deferred, key=lambda q: int(q.id[1:])):
                 print(f"  {q.id:5} {q.qtype:8} {q.xp:>3}xp  "
                       f"(unplaced - its district IS the answer)  [open]")
         elif rest:

@@ -115,7 +115,12 @@ def render_map(world: World, s: Session) -> str:
     if not s.boss_open:
         lines.append(f"(boss quests are sealed until {boss_needed(world)} zones are cleared)")
     else:
-        lines.append("!! the BOSS LAIR is open - see 'buzz quests' in the boss zone")
+        _boss_qs = [q for q in world.questions.values() if q.boss]
+        if _boss_qs and all(q.id in s.resolved for q in _boss_qs):
+            pass  # the boss has fallen - status carries that story
+        else:
+            lines.append("!! the BOSS LAIR is open - see 'buzz quests' "
+                         "in the boss zone")
     return "\n".join(lines)
 
 
@@ -137,9 +142,20 @@ def _source_peek(world: World, m) -> list[str]:
             break
     # column-0 lines only: indented (function-level / TYPE_CHECKING) imports
     # stay hidden, same as the fog rules
+    # AST-verified: an unindented docstring line reading 'from the
+    # actual socket...' scraped in as an import (round c12) - an
+    # evidence panel must never render prose as a verified edge
+    import ast as _ast
+    try:
+        _tree = _ast.parse(text)
+        _import_lines = {n.lineno for n in _ast.walk(_tree)
+                         if isinstance(n, (_ast.Import, _ast.ImportFrom))
+                         and getattr(n, "col_offset", 1) == 0}
+    except SyntaxError:
+        _import_lines = set()
     all_imports = [f"  {i}: {raw[:76]}{'...' if len(raw) > 76 else ''}"
                    for i, raw in enumerate(text.splitlines(), 1)
-                   if raw.startswith(("import ", "from "))]
+                   if i in _import_lines]
     if all_imports:
         lines.append("  top-of-file import lines (verbatim, relative and "
                      "absolute forms are the same edge):")

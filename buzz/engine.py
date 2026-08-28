@@ -67,7 +67,10 @@ def resolve_module(world: World, name: str) -> str:
             return sufx[0]
     if len(exact) > 1 or len(sufx) > 1:
         raise GameError(f"'{name}' is ambiguous: {', '.join(exact or sufx)}")
-    raise GameError(f"no module called '{name}' in this hive")
+    # the same sentence a FOGGED module gets: a miss must not confirm
+    # what exists (round c12 enumerated the fog by name-guessing)
+    raise GameError(f"'{name}' is not within your sight - the fog may "
+                    f"still hold it")
 
 
 def resolve_zone(world: World, name: str) -> str:
@@ -129,7 +132,8 @@ def peek(world: World, s: Session, name: str) -> str:
     there. Reading is discovering - it counts, it just doesn't move you."""
     m = resolve_module(world, name)
     if m != s.here and m not in s.seen:
-        raise GameError(f"{m} is still under fog - you have not seen it yet")
+        raise GameError(f"'{m}' is not within your sight - the fog may "
+                        f"still hold it")
     prev = s.here
     _arrive(world, s, m)
     s.here = prev
@@ -184,6 +188,7 @@ def zone_edges(world: World, zid: str, s: Session | None = None) -> list[str]:
         zone_of = {m: ("???" if m in masked else world.modules[m].zone)
                    for m in world.modules}
         for e in sorted(cross, key=lambda e: (e.src, e.dst)):
+            _name_seen(s, e.src, e.dst)  # printed = seen (c12 accounting)
             if e.src in members:
                 lines.append(f"  {e.src} -> {e.dst} [{zone_of.get(e.dst, '?')}]")
             else:
@@ -967,6 +972,7 @@ def rank(world: World, s: Session) -> str:
 
 
 LESSONS = {
+    "journey": "runtime flow follows CALLS, not imports - the request's real path is the story the import map cannot tell",
     "walk": "transitive top-level chains carry breakage across modules that never name each other",
     "cycle": "a function-level import is often a deliberate cycle-breaker, not sloppiness",
     "region": "blast radius = reverse reachability over always-run imports only; chains ignore zone boundaries",
