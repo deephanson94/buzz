@@ -161,10 +161,10 @@ def zone_edges(world: World, zid: str, s: Session | None = None) -> list[str]:
     members = members - withheld
     edges = [e for e in world.edges
              if e.kind == TOP and e.src in members and e.dst in members]
-    zname = world.zones[zid].name
-    if s is not None and not any(world.modules[m].zone == zid
-                                 for m in s.discovered):
-        zname = "??? (unexplored district)"
+    from .render import known_zones
+    zname = (world.zones[zid].name
+             if s is None or zid in known_zones(world, s)
+             else "??? (unexplored district)")
     lines = [f"top-level import edges inside {zname} ({zid}):"]
     for e in sorted(edges, key=lambda e: (e.src, e.dst)):
         _name_seen(s, e.src, e.dst)

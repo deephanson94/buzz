@@ -494,11 +494,9 @@ def render_atlas(world: World, s: Session) -> str:
     for z in sorted(world.zones.values(), key=lambda z: z.order):
         x, y, w, h = boxes[z.id]
         parts = overlay
-        # the district is NAMED by the same rule the CLI map uses: a
-        # member must be READ (the atlas naming zones the shell still
-        # called '???' was a groundedness break, not a convenience)
-        known = any(m in disc for m in z.members)
-        title = z.name if known else "??? unexplored district"
+        # the district is NAMED by the game's ONE naming predicate
+        title = (z.name if z.id in render.known_zones(world, s)
+                 else "??? unexplored district")
         zq = [q for q in world.questions.values() if q.zone == z.id and not q.boss]
         nboss = sum(1 for q in world.questions.values()
                     if q.zone == z.id and q.boss)
@@ -576,8 +574,8 @@ def render_atlas(world: World, s: Session) -> str:
         if m not in world.modules:
             continue
         mod = world.modules[m]
-        zone_known = any(x in disc for x in world.zones[mod.zone].members)
-        zname = (world.zones[mod.zone].name if zone_known
+        zname = (world.zones[mod.zone].name
+                 if mod.zone in render.known_zones(world, s)
                  else "an unnamed district")
         if m in masked:
             zname = "??? - a scout must place this module"

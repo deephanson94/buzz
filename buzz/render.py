@@ -14,6 +14,23 @@ def masked_modules(world: World, s: Session) -> set[str]:
             if q.qtype == "place" and q.id not in s.resolved}
 
 
+def known_zones(world: World, s: Session) -> set[str]:
+    """The ONE predicate for 'may this district's name be printed'.
+    Round c6's oracle: any per-surface variant of this test eventually
+    disagrees with another and the disagreement is an answer. A zone's
+    name is known iff a PLACED member has been read (a placement-masked
+    module must not unlock its own hidden district - 'look' on it says
+    '???' and used to flip the map), or its place quest is resolved
+    (the player proved, or was shown, the placement)."""
+    masked = masked_modules(world, s)
+    known = {world.modules[m].zone for m in s.discovered
+             if m in world.modules and m not in masked}
+    for q in world.questions.values():
+        if q.qtype == "place" and q.id in s.resolved:
+            known.add(q.truth["zone"])
+    return known
+
+
 def _mod_label(world: World, s: Session, m: str) -> str:
     glyph = ROLE_GLYPH.get(world.modules[m].role, "")
     here = " <YOU>" if m == s.here else ""
@@ -47,8 +64,8 @@ def render_map(world: World, s: Session) -> str:
                   else " (side content - no quests)" if not zq
                   else f"  quests {done}/{len(zq)}"
                   + (f" +{n_boss} boss" if n_boss else ""))
-        known = z.id in {world.modules[m].zone for m in s.discovered}
-        title = z.name if known else "??? (unexplored district)"
+        title = (z.name if z.id in known_zones(world, s)
+                 else "??? (unexplored district)")
         lines.append(f"[{z.id}] {title}{status}")
         if z.id in s.cleared and s.here not in z.members:
             # cleared districts collapse to keep the growing map legible
@@ -173,8 +190,7 @@ def _status_of(s: Session, qid: str) -> str:
 
 def render_quests(world: World, s: Session, zone_id: str) -> str:
     z = world.zones[zone_id]
-    zname = (z.name if any(world.modules[m].zone == zone_id
-                           for m in s.discovered)
+    zname = (z.name if zone_id in known_zones(world, s)
              else "??? (unexplored district)")
     qs = [q for q in world.questions.values() if q.zone == zone_id
           # place quests are district-independent (filed under their

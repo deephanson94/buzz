@@ -269,9 +269,10 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
     elif cmd == "quests":
         if rest and rest[0] == "all":
             print("every quest in the hive (id / type / XP / zone / status):")
+            from .render import known_zones as _kz
+            _known = _kz(world, s)
             for z in sorted(world.zones.values(), key=lambda z: z.order):
-                zname = (z.name if any(m in s.discovered
-                                       for m in z.members) else "???")
+                zname = z.name if z.id in _known else "???"
                 for q in sorted((q for q in world.questions.values()
                                  if q.zone == z.id),
                                 key=lambda q: (q.boss, q.id)):
@@ -281,7 +282,6 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
                     # over its own answer - it lists as unplaced instead
                     shown = ("(unplaced - its district IS the answer)"
                              if q.qtype == "place" and st == "open"
-                             else z.name if q.qtype == "place"
                              else zname)
                     print(f"  {q.id:5} {q.qtype:8} {q.xp:>3}xp  "
                           f"{shown}{boss}  [{st}]")

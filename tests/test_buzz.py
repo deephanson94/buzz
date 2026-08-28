@@ -1033,3 +1033,23 @@ def test_atlas_interactive_fog_safe(world):
     edges = _json.loads(re.search(r"var EDGES=(\[.*?\]);", page).group(1))
     assert all(src in s.discovered for src, _dst, _k in edges)
     assert all(dst in s.seen for _src, dst, _k in edges)
+
+
+def test_known_zones_one_predicate(world):
+    from buzz.render import known_zones, masked_modules
+    s = engine.new_session(world)
+    pq = next((q for q in world.questions.values() if q.qtype == "place"),
+              None)
+    if pq is None:
+        pytest.skip("fixture has no place quest")
+    target, zid = pq.truth["module"], pq.truth["zone"]
+    # sighting and even READING the masked module must not unlock the
+    # name of the district it secretly belongs to (round c6's oracle)
+    s.seen.append(target)
+    s.discovered.append(target)
+    assert target in masked_modules(world, s)
+    assert zid not in known_zones(world, s)
+    # solving the place quest names the district - one write, every
+    # surface reads the same predicate
+    s.resolved[pq.id] = "correct"
+    assert zid in known_zones(world, s)

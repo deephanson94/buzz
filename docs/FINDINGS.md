@@ -162,7 +162,13 @@ graph those tools give away for free is a difficulty-model question,
 not a bug fix; (c) a district can be *CLEARED* while still named
 '??? unexplored' (all its quests solved without a visit) - decide
 whether clearing should name it; (d) the post-answer nudge reasons
-from the standing zone, not the solved quest's zone. Probe verdicts also verified: an earned-sight route that
+from the standing zone, not the solved quest's zone; (e) round c6's
+design critique of the place quest TYPE: its answer is a majority
+vote over buzz's own Louvain partition ('which cluster did the
+partitioner assign this to'), and hint 1 says as much - unlike gate or
+walk quests it may not teach judgement that transfers. Candidate v2:
+retire place as a quest type or re-ground it in something the repo
+itself asserts (package paths, imports-majority stated as such). Probe verdicts also verified: an earned-sight route that
 `buzz trace` confirms hop-for-hop, edge kinds carried into the chain
 text with a CAUTION on types-only hops. Methodology: the audit-fix-
 confirm loop ran three times because each confirmation found a NEW
