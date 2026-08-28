@@ -102,12 +102,13 @@ def gen_walk(world: World, G: nx.DiGraph, zone_id: str, count: int = 2,
             f"Walk the import chain that connects them: start at {a}, end at "
             f"{b}, naming each module along the way. Any real chain of "
             f"imports counts.",
-            f"A wing-note from the archives: a bad release of {b} once took "
+            f"The archives record that a bad release of {b} once took "
             f"{a} down with it - though {a} never names {b} anywhere in its "
             f"file. Retrace the supply line that made it possible: walk the "
             f"imports from {a} all the way to {b}.",
-            f"Prove the rumor: {a} secretly rests on {b}. Show the evidence "
-            f"as a walk - every hop a real import - from {a} down to {b}.",
+            f"Rumor has it {a} depends on {b}, though no import says so "
+            f"directly. Prove it with a walk - every hop a real import - "
+            f"from {a} down to {b}.",
         ])
         _q(world, zone_id, "walk", "walk", prompt,
            {"src": a, "dst": b, "example": example},
@@ -193,8 +194,8 @@ def gen_region(world: World, G: nx.DiGraph, zone_id: str, boss: bool = False,
     else:
         cands = sorted(m for m in zone.members if m != x)
     lead = _flavor(world, [
-        f"Blast radius. You are changing {x}'s public API.",
-        f"Storm warning. A breaking change is landing on {x} tonight.",
+        f"You are changing {x}'s public API.",
+        f"A breaking change lands on {x} tonight.",
     ])
     _q(world, zone_id, "region", "region",
        f"{lead} Select every candidate that could break - everything that "
@@ -228,7 +229,7 @@ def gen_boss_reach(world: World, G: nx.DiGraph, boss: str, used: set) -> int:
     why = {m: nx.shortest_path(G, boss, m) for m in sorted(picks)}
     used.add(_sig("region", boss))
     _q(world, world.modules[boss].zone, "region", "region",
-       f"The heart of the hive. Someone runs `import {boss}`. Which of these "
+       f"Someone runs `import {boss}`. Which of these "
        f"modules MUST load successfully for that import to complete? "
        f"{boss} touches all of them - but modules it reaches only through "
        f"sealed tunnels (function-level imports) or type-hints do NOT load "
@@ -317,14 +318,14 @@ def gen_ghost(world: World, zone_id: str, boss: bool = False,
         # deliberately no exact commit count in the prompt - playtesters
         # string-matched it against probe output instead of reasoning
         lead = _flavor(world, [
-            f"Ghost edge. No import statement of ANY kind (top-level, "
+            f"No import statement of ANY kind (top-level, "
             f"function-level, or type-hint) connects {x} to it in either "
             f"direction, yet git says they change together constantly - "
-            f"hidden coupling the import graph cannot see.",
+            f"a ghost edge the import graph cannot see.",
             f"The old bees whisper that {x} has a secret companion: a module "
             f"it never imports and is never imported by, yet the two have "
-            f"moved in lockstep through years of history.",
-            f"Someone keeps editing two files in the same breath: {x}, and a "
+            f"changed together for years.",
+            f"Someone keeps editing two files in the same commit: {x}, and a "
             f"module git says it has never once imported. Find the silent "
             f"partner.",
         ])
@@ -357,9 +358,9 @@ def gen_hub(world: World, G: nx.DiGraph, zone_id: str,
     hub, n = ranked[0]
     used.add(_sig("hub", zone_id))
     _q(world, zone_id, "hub", "point",
-       f"Every district rests on one load-bearing wall. Which module in "
-       f"{zone.name} is imported (top-level) by more of its own district "
-       f"than any other? Point at it: answer <module>.",
+       f"Which module in {zone.name} does the rest of the district lean "
+       f"on most - imported (top-level) by more of its own neighbors than "
+       f"any other? Point at it: answer <module>.",
        {"module": hub, "count": n},
        xp=15, distance=n + 1)
     return 1
@@ -415,9 +416,9 @@ def gen_elder(world: World, zone_id: str, used: set | None = None) -> int:
         return 0
     used.add(_sig("elder", zone_id))
     _q(world, zone_id, "elder", "edge",
-       f"The elders' dispute. Two residents of {zone.name} both claim to be "
+       f"Two residents of {zone.name} both claim to be "
        f"the district's founder: {min(old, new)} and {max(old, new)}. Git "
-       f"remembers. Draw time's arrow from the elder to the newcomer: "
+       f"remembers. Answer with the elder first, the newcomer second: "
        f"answer <older> <newer>.",
        {"src": old, "dst": new,
         "born_src": world.modules[old].born, "born_dst": world.modules[new].born},
@@ -439,7 +440,7 @@ def gen_hotspot(world: World, zone_id: str, used: set | None = None) -> int:
         return 0  # no clear hotspot
     used.add(_sig("hotspot", zone_id))
     _q(world, zone_id, "hotspot", "point",
-       f"Storm damage survey. One building in {zone.name} has been rebuilt "
+       f"One building in {zone.name} has been rebuilt "
        f"far more often than any other - the district's churn hotspot, where "
        f"bugs and features keep landing. Point at it: answer <module>.",
        {"module": top, "commits": c1},
@@ -526,9 +527,9 @@ def gen_scar(world: World, zone_id: str, used: set | None = None) -> int:
         used.add(_sig("scar", zone_id))
         used.add(_sig("scar", m))
         _q(world, zone_id, "scar", "point",
-           f"The hive remembers a wound. On {ev['date']} a change was "
+           f"On {ev['date']} a change here was "
            f"ROLLED BACK: \"{ev['subject']}\". Somewhere in "
-           f"{zone.name} stands the module that bears that scar. Dig "
+           f"{zone.name} stands the module that bears the scar. Dig "
            f"through the history (git is fair game) and point at it: "
            f"answer <module>.",
            {"module": m, "subject": ev["subject"], "date": ev["date"]},
@@ -589,7 +590,7 @@ def gen_gate(world: World, G: nx.DiGraph, zone_id: str,
                         f"means: {', '.join(shown_funnel)}.)"
                         if shown_funnel else "")
                 _q(world, zone_id, "gate", "point",
-                   f"The gate. Every top-level import route from {a} to {b} "
+                   f"Every top-level import route from {a} to {b} "
                    f"squeezes through a single LOCAL chokepoint - remove "
                    f"that one module and {a} loses {b} entirely.{excl} "
                    f"Point at the chokepoint: answer <module>.",
@@ -631,7 +632,7 @@ def gen_cut(world: World, G: nx.DiGraph, zone_id: str,
     tie = (" (Candidates may tie for fewest - any pick at the minimum "
            "counts.)" if len(lows) > 1 else "")
     _q(world, zone_id, "cut", "point",
-       f"The demolition order. Budget cuts: exactly one of these modules "
+       f"Budget cuts: exactly one of these modules "
        f"will be deleted outright - {', '.join(cands)}. Every module that "
        f"transitively imports the victim (top-level chains) is stranded "
        f"with it. Which deletion strands the FEWEST other modules?{tie} "
@@ -695,7 +696,7 @@ def gen_refactor(world: World, G: nx.DiGraph, zone_id: str,
             return 1
         used.add(_sig("refactor", zone_id))
         _q(world, zone_id, "refactor", "edge",
-           f"The refactor council. {x} is imported top-level by both "
+           f"The refactor council meets: {x} is imported top-level by both "
            f"{winner} and {loser}, and each owner proposes severing THEIR "
            f"import to shrink {x}'s blast radius (today: {base} modules "
            f"can reach {x} through always-run chains). Redundant routes "
@@ -748,9 +749,9 @@ def gen_via(world: World, G: nx.DiGraph, zone_id: str,
                 used.add(_sig("via", src, via, dst))
                 used.add(_sig("walk", src, dst))  # no duplicate plain walk
                 _q(world, zone_id, "via", "walk",
-                   f"The inspection tour. Walk a top-level import chain "
+                   f"Walk a top-level import chain "
                    f"from {src} all the way to {dst} - but protocol says "
-                   f"the tour MUST pass through {via} on the way. "
+                   f"this inspection tour MUST pass through {via} on the way. "
                    f"answer <module> <module> ... (start at {src}, "
                    f"end at {dst}, {via} somewhere between).",
                    {"src": src, "dst": dst, "via": via, "example": example},
@@ -820,7 +821,7 @@ def gen_order(world: World, G: nx.DiGraph, zone_id: str,
                 if herring:
                     truth["herring"] = herring
                 _q(world, zone_id, "order", "order",
-                   f"The migration plan. These {k} modules are being "
+                   f"These {k} modules are being "
                    f"rewritten: {', '.join(combo)}. Rule: a module may "
                    f"only be rewritten AFTER everything it imports "
                    f"(directly or through top-level chains) is already "
@@ -850,7 +851,7 @@ def gen_direction(world: World, zone_id: str, count: int = 2,
         used.add(pair)
         a, b = sorted((e.src, e.dst))
         _q(world, zone_id, "direction", "edge",
-           f"Two residents, one dependency: {a} and {b}. Exactly one of "
+           f"{a} and {b}: exactly one of "
            f"them imports the other (top-level). Getting this backwards is "
            f"how newcomers break builds - draw the edge the right way: "
            f"answer <importer> <imported>.",
@@ -913,7 +914,7 @@ def gen_journey(world: World, count: int = 3,
         used.add(_sig("journey-dst", dst))
         used.add(_sig("journey-nodes", *path))
         _q(world, world.modules[e].zone, "journey", "walk",
-           f"THE JOURNEY. A run begins at {e} - and by the time the work "
+           f"A run begins at {e} - and by the time the work "
            f"is done, code in {dst} has executed. Follow the WORK, not the "
            f"imports: name the stations in order from {e} to {dst}, where "
            f"every hop is a real function CALL from one module into the "

@@ -353,8 +353,8 @@ def _explain(world: World, q: Question) -> str:
         return f"the blast radius of {t['target']} is: {', '.join(t['region'])}"
     if q.qtype == "hub":
         doc = world.modules[t["module"]].doc
-        return (f"{t['module']} is the load-bearing wall - imported top-level "
-                f"by {t['count']} modules of its own district"
+        return (f"{t['module']} is the one the district leans on - imported "
+                f"top-level by {t['count']} modules of its own district"
                 + (f' ("{doc}")' if doc else ""))
     if q.qtype == "gate":
         doc = world.modules[t["module"]].doc
@@ -996,7 +996,7 @@ LESSONS = {
     "region": "blast radius = reverse reachability over always-run imports only; chains ignore zone boundaries",
     "ghost": "git co-change reveals coupling the import graph cannot see",
     "place": "a module's district is defined by where its import neighbors live",
-    "hub": "in-degree inside a cluster tells you which wall is load-bearing",
+    "hub": "in-degree inside a cluster tells you which module the rest lean on",
     "gate": "high-betweenness modules are chokepoints: sever one and whole regions go dark",
     "detour": "redundant import paths are resilience - know the second road before you close the first",
     "elder": "file age explains architecture: the oldest modules shaped every API that came after",

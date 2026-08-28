@@ -49,13 +49,15 @@ def export_brief(world: World, per_zone: int = 2) -> dict:
                 "Write in the game's voice: the repo is a hive, districts "
                 "are chambers, modules are residents, git history is the "
                 "chronicle, long-lived modules are elders, the player is a "
-                "scout bee. Open each prompt with one flavorful beat, then "
-                "ask the concrete question plainly - flavor must never "
-                "blur the technical claim. Register examples from the "
+                "scout bee. Lead with the concrete question; let the theme "
+                "live in the nouns, not in scene-setting. Never open with a "
+                "short dramatic fragment ('The gate.', 'Storm warning.') or "
+                "an aphorism - that reads as generated text. Flavor must "
+                "never blur the technical claim. Register examples from the "
                 "game's own quests: 'A page from the hive's chronicle, "
                 "2024-01-09: ...' / 'The old bees whisper that X has a "
-                "secret companion...' / 'Storm damage survey. One building "
-                "in this district has been rebuilt far more often...'"),
+                "secret companion...' / 'One building in this district has "
+                "been rebuilt far more often than any other...'"),
             "rules": [
                 "each question asks WHERE a specific behavior, mechanism, or "
                 "responsibility lives - answerable by pointing at ONE module",

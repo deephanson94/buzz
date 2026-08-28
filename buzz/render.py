@@ -368,7 +368,7 @@ def render_status(world: World, s: Session) -> str:
             lines.append(f"({left} endgame district(s) stay open for 100% "
                          f"hunters - or point buzz at another repo)")
         else:
-            lines.append(f"*** FULL CLEAR - the load-bearing core of this "
+            lines.append(f"*** FULL CLEAR - the core of this "
                          f"hive is mapped. Final rank: {rank(world, s)} ***")
             lines.append("(quests target the structure that matters, not "
                          "every file - most of the fog is side rooms)")
