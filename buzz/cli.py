@@ -281,6 +281,7 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
                     # over its own answer - it lists as unplaced instead
                     shown = ("(unplaced - its district IS the answer)"
                              if q.qtype == "place" and st == "open"
+                             else z.name if q.qtype == "place"
                              else zname)
                     print(f"  {q.id:5} {q.qtype:8} {q.xp:>3}xp  "
                           f"{shown}{boss}  [{st}]")

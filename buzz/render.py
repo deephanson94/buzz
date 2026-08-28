@@ -38,7 +38,8 @@ def render_map(world: World, s: Session) -> str:
     unplaced = sorted(m for m in masked if m in s.seen)
     for z in sorted(world.zones.values(), key=lambda z: z.order):
         vis = [m for m in z.members if m in s.seen and m not in masked]
-        zq = [q for q in world.questions.values() if q.zone == z.id and not q.boss]
+        zq = [q for q in world.questions.values()
+              if q.zone == z.id and not q.boss and q.qtype != "place"]
         done = sum(1 for q in zq if q.id in s.resolved)
         n_boss = sum(1 for q in world.questions.values()
                      if q.zone == z.id and q.boss)
@@ -60,7 +61,8 @@ def render_map(world: World, s: Session) -> str:
             for m in sorted(vis, key=lambda m: -world.modules[m].pagerank):
                 row.append("  " + _mod_label(world, s, m))
             lines.extend(row)
-        hidden = len([m for m in z.members if m not in s.seen])
+        hidden = len([m for m in z.members
+                      if m not in s.seen and m not in masked])
         if hidden:
             lines.append(f"  ... and {hidden} module(s) under fog")
         lines.append("")
@@ -171,6 +173,9 @@ def _status_of(s: Session, qid: str) -> str:
 
 def render_quests(world: World, s: Session, zone_id: str) -> str:
     z = world.zones[zone_id]
+    zname = (z.name if any(world.modules[m].zone == zone_id
+                           for m in s.discovered)
+             else "??? (unexplored district)")
     qs = [q for q in world.questions.values() if q.zone == zone_id
           # place quests are district-independent (filed under their
           # answer): they list in 'quests all', never here, and never
@@ -180,7 +185,7 @@ def render_quests(world: World, s: Session, zone_id: str) -> str:
     nb = [q for q in qs if not q.boss]
     done = sum(1 for q in nb if q.id in s.resolved)
     n_boss = len(qs) - len(nb)
-    lines = [f"quests in {z.name} ({z.id}) - {done}/{len(nb)} resolved"
+    lines = [f"quests in {zname} ({z.id}) - {done}/{len(nb)} resolved"
              + (f" (+{n_boss} boss quest(s) listed below)" if n_boss else "")
              + (" *CLEARED*" if zone_id in s.cleared else "") + ":"]
     for q in sorted(qs, key=lambda q: (q.boss, q.truth.get("stage", 0), q.id)):
