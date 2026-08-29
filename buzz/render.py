@@ -316,11 +316,14 @@ def render_question(world: World, s: Session, q) -> str:
     # where the fog lives (round c7: 'quest q26' named The Defaults
     # Atrium on a virgin session)
     prompt = mask_prose(world, s, q.prompt)
-    lines = [f"[{q.id}] ({q.qtype}, {q.xp} XP, status: {st})", "", prompt,
+    from .ui import paint
+    lines = [paint(f"[{q.id}] ({q.qtype}, {q.xp} XP, status: {st})", "gold"),
+             "", prompt,
              *([rule] if rule else []),
-             *([evidence] if evidence else []), "",
+             *([paint(evidence, "cyan")] if evidence else []), "",
              f"answer syntax: {syntax}",
-             f"stuck? 'buzz hint {q.id}' (level 1 free-ish, costs XP; level 3 reveals)"]
+             paint(f"stuck? 'buzz hint {q.id}' (level 1 free-ish, costs XP; "
+                   f"level 3 reveals)", "dim")]
     return "\n".join(lines)
 
 

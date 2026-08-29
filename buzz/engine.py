@@ -186,6 +186,7 @@ def zone_edges(world: World, zid: str, s: Session | None = None,
     tally withholds (round BIGEDGE: both scouts solved hubs from row
     length alone). Printed = seen (c12 accounting) holds in every view:
     only names actually shown are marked seen."""
+    from .ui import paint
     CAP = 6
     members = set(world.zones[zid].members)
     # a module under an OPEN place quest must not appear in a titled
@@ -216,8 +217,8 @@ def zone_edges(world: World, zid: str, s: Session | None = None,
 
     def legend() -> list[str]:
         if any("[???]" in ln for ln in lines):
-            lines.append("([???] = a sighting not yet placed in any "
-                         "district)")
+            lines.append(paint("([???] = a sighting not yet placed in "
+                               "any district)", "dim"))
         return lines
 
     mods = ([mod] if isinstance(mod, str) else list(mod or []))
@@ -228,18 +229,19 @@ def zone_edges(world: World, zid: str, s: Session | None = None,
     if len(mods) > 1:
         # the comparison lens: counts only, one line per candidate -
         # eleven single lenses for one hub quest was ceremony (BIGEDGEc)
-        lines.append(f"comparing {len(mods)} modules in {zname} ({zid}) "
-                     f"(top-level, this district's listing):")
+        lines.append(paint(f"comparing {len(mods)} modules in "
+                           f"{zname} ({zid})", "gold")
+                     + " (top-level, this district's listing):")
         _name_seen(s, *mods)
         for m in sorted(mods):
             n_in = sum(1 for e in edges if e.dst == m)
             n_out = sum(1 for e in edges if e.src == m)
             n_x = sum(1 for e in cross if m in (e.src, e.dst))
-            lines.append(f"  {m}: {n_in} in-district importer(s), "
-                         f"{n_out} forward import(s), {n_x} cross-district "
-                         f"edge(s)")
-        lines.append("  ('edges " + zid + " <module>' shows one module's "
-                     "edges by name)")
+            lines.append(f"  {paint(m, 'cyan')}: {n_in} in-district "
+                         f"importer(s), {n_out} forward import(s), "
+                         f"{n_x} cross-district edge(s)")
+        lines.append(paint("  ('edges " + zid + " <module>' shows one "
+                           "module's edges by name)", "dim"))
         return legend()
 
     if mods:
@@ -249,11 +251,13 @@ def zone_edges(world: World, zid: str, s: Session | None = None,
         # import nothing further top-level - dead ends for walks
         # (BIGEDGEc: a lens-only walk burned ~19 calls on dead branches)
         m0 = mods[0]
-        lines.append(f"top-level edges touching {m0} in {zname} ({zid}):")
+        lines.append(paint(f"top-level edges touching {m0} in "
+                           f"{zname} ({zid})", "gold") + ":")
         imps = sorted(e.src for e in edges if e.dst == m0)
         outs = sorted(e.dst for e in edges if e.src == m0)
         c_out = sorted((e.dst for e in cross if e.src == m0))
-        c_in = sorted(f"{e.src} [{zone_of.get(e.src, '?')}]"
+        c_in = sorted(f"{e.src} " + paint(f"[{zone_of.get(e.src, '?')}]",
+                                          "dim")
                       for e in cross if e.dst == m0)
         _name_seen(s, m0, *imps, *outs, *c_out)
         for e in cross:
@@ -261,6 +265,7 @@ def zone_edges(world: World, zid: str, s: Session | None = None,
                 _name_seen(s, e.src)
 
         def _wrapped(label: str, names: list[str]) -> None:
+            label = paint(label, "cyan")
             # the lens stays UNCAPPED (it is the honest instrument), but
             # never as one unbounded line - a hub's 89 importers came
             # out as a single 2852-char row (BIGEDGEc2)
@@ -279,32 +284,36 @@ def zone_edges(world: World, zid: str, s: Session | None = None,
         if outs:
             fmt = []
             for d in outs:
-                tag = " (leaf)" if _leaf(d) else ""
+                tag = paint(" (leaf)", "yellow") if _leaf(d) else ""
                 leafy = leafy or bool(tag)
                 fmt.append(d + tag)
             _wrapped(f"in-district imports ({len(outs)})", fmt)
         if c_out:
             fmt = []
             for d in c_out:
-                tag = " (leaf)" if _leaf(d) else ""
+                tag = paint(" (leaf)", "yellow") if _leaf(d) else ""
                 leafy = leafy or bool(tag)
-                fmt.append(f"{d} [{zone_of.get(d, '?')}]" + tag)
+                fmt.append(f"{d} " + paint(f"[{zone_of.get(d, '?')}]", "dim")
+                           + tag)
             _wrapped("outward cross-district", fmt)
         if c_in:
             _wrapped(f"inward cross-district ({len(c_in)})", c_in)
         if len(lines) == 1:
             lines.append("  (no top-level edges touch it in this listing)")
         if leafy:
-            lines.append("  ((leaf) = imports nothing further top-level - "
-                         "a dead end for forward walks)")
+            lines.append(paint("  ((leaf) = imports nothing further "
+                               "top-level - a dead end for forward walks)",
+                               "dim"))
         return legend()
 
     n_dst = len({e.dst for e in edges})
     lines.append(
-        f"top-level import edges inside {zname} ({zid}): "
-        f"{len(edges)} edge(s) onto {n_dst} imported module(s)"
-        + ("" if full else "  ('edges ... full' lists every arrow; "
-                           "'edges <district> <module>' zooms into one)"))
+        paint(f"top-level import edges inside {zname} ({zid})", "gold")
+        + f": {len(edges)} edges onto {n_dst} modules")
+    if not full:
+        lines.append(paint(f"  ('edges {zid} full' = every arrow · "
+                           f"'edges {zid} <module>' = one module · "
+                           f"'edges {zid} <m1> <m2>' = compare)", "dim"))
     if full:
         for e in sorted(edges, key=lambda e: (e.src, e.dst)):
             _name_seen(s, e.src, e.dst)
@@ -322,24 +331,26 @@ def zone_edges(world: World, zid: str, s: Session | None = None,
                 shown = srcs[:CAP]
                 capped = True
                 _name_seen(s, dst, *shown)
-                lines.append(f"  {dst} <- {', '.join(shown)}, ...")
+                lines.append(f"  {paint(dst, 'cyan')} <- "
+                             + ", ".join(shown) + ", ...")
             else:
                 _name_seen(s, dst, *srcs)
-                lines.append(f"  {dst} <- {', '.join(srcs)}")
+                lines.append(f"  {paint(dst, 'cyan')} <- "
+                             + ", ".join(srcs))
         if capped:
-            lines.append("  (rows ending '...' have more importers - "
-                         "shortened while this district's hub quest is "
-                         "open, so row size can't hand over the tally; "
-                         "compare candidates in one call: "
-                         f"'edges {zid} <m1> <m2> ...')")
+            lines.append(paint("  ('...' = more importers - compare "
+                               f"candidates: 'edges {zid} <m1> <m2> ...')",
+                               "dim"))
     # NB: withheld edges get no note here - "N unplaced modules in THIS
     # district" is the same leak in a different coat
     if not edges:
-        lines.append("  (none - this district is held together by git "
-                     "history and convention, not imports)")
+        lines.append(paint("  (none - this district is held together "
+                           "by git history and convention, not imports)",
+                           "dim"))
     if cross:
-        lines.append("cross-district edges touching it (all top-level; "
-                     "answers often route through these):")
+        lines.append(paint("cross-district edges (top-level):", "gold")
+                     + paint(" answers often route through these",
+                             "dim"))
         if full:
             for e in sorted(cross, key=lambda e: (e.src, e.dst)):
                 _name_seen(s, e.src, e.dst)  # printed = seen
@@ -365,7 +376,7 @@ def zone_edges(world: World, zid: str, s: Session | None = None,
 
             def _cross_block(title: str, d: dict[str, list[str]],
                              arrow: str) -> None:
-                lines.append(f"  {title}")
+                lines.append("  " + paint(title, "cyan"))
                 rows = sorted(d.items(),
                               key=lambda kv: (-len(kv[1]), kv[0]))
                 for m, partners in rows[:BUSY]:
@@ -374,13 +385,16 @@ def zone_edges(world: World, zid: str, s: Session | None = None,
                     _name_seen(s, m, *shown)
                     tail = (f", +{len(ps) - len(shown)} more"
                             if len(ps) > len(shown) else "")
-                    lines.append(f"    {m} {arrow} " + ", ".join(
-                        f"{p} [{zone_of.get(p, '?')}]" for p in shown)
-                        + tail)
+                    lines.append(f"    {paint(m, 'cyan')} {arrow} "
+                        + ", ".join(
+                            f"{p} " + paint(f"[{zone_of.get(p, '?')}]",
+                                            "dim") for p in shown)
+                        + paint(tail, "dim"))
                 if len(rows) > BUSY:
-                    lines.append(f"    (+{len(rows) - BUSY} more "
-                                 f"module(s) - 'edges {zid} full' or "
-                                 f"'edges {zid} <module>' has the rest)")
+                    lines.append(paint(f"    (+{len(rows) - BUSY} more "
+                                       f"module(s) - 'edges {zid} full' or "
+                                       f"'edges {zid} <module>' has the "
+                                       f"rest)", "dim"))
 
             if outward:
                 _cross_block("outward (this district imports):",
@@ -389,8 +403,9 @@ def zone_edges(world: World, zid: str, s: Session | None = None,
                 _cross_block("inward (imported from outside):",
                              inward, "<-")
     if hub_open:
-        lines.append("(in-degree tally withheld: this district's hub quest "
-                     "is still open - that count IS the answer)")
+        lines.append(paint("(in-degree tally withheld: this district's "
+                           "hub quest is still open - that count IS the "
+                           "answer)", "dim"))
     elif edges:
         indeg: dict[str, int] = {}
         for e in edges:
@@ -399,8 +414,9 @@ def zone_edges(world: World, zid: str, s: Session | None = None,
         lines.append("in-district in-degree tally (placed modules only): "
                      + ", ".join(f"{m} ({n})" for m, n in top))
     if quest_open("hotspot"):
-        lines.append("(churn ranking withheld: this district's hotspot quest "
-                     "is still open - that ranking IS the answer)")
+        lines.append(paint("(churn ranking withheld: this district's "
+                           "hotspot quest is still open - that ranking IS "
+                           "the answer)", "dim"))
     else:
         churn = sorted(members, key=lambda m: -world.modules[m].commits)[:8]
         # a name this line prints is a name the session has seen - the
