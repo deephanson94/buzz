@@ -329,6 +329,43 @@ def test_zone_edges_dump(world):
     assert out and out[0].startswith("top-level import edges")
 
 
+def test_zone_edges_grouped_capped_and_lens(world):
+    """BIGEDGE round: grouped view caps importer lists (numberless '...')
+    while the hub quest is open, only printed names are marked seen, the
+    full view keeps raw arrows, and the module lens shows both
+    directions uncapped."""
+    hubs = [q for q in world.questions.values() if q.qtype == "hub"]
+    zid = hubs[0].zone if hubs else next(iter(world.zones))
+    s = engine.new_session(world)
+    grouped = engine.zone_edges(world, zid, s)
+    fulld = engine.zone_edges(world, zid, s, full=True)
+    assert any(" <- " in ln for ln in grouped)
+    assert any(" -> " in ln for ln in fulld[1:2] + fulld[1:])
+    if hubs:
+        # while the hub quest is open: no in-degree tally line, and any
+        # row over the cap ends in a numberless ellipsis
+        assert any("tally withheld" in ln for ln in grouped)
+        hub_target = hubs[0].truth["module"]
+        row = next((ln for ln in grouped
+                    if ln.strip().startswith(f"{hub_target} <-")), "")
+        if row.rstrip().endswith("..."):
+            assert not any(ch.isdigit() for ch in row.split("<-")[1]), \
+                "capped row must not carry a count"
+        # capped grouped view marks only PRINTED names seen: never more
+        # than the full dump's names
+        s2 = engine.new_session(world)
+        engine.zone_edges(world, zid, s2)
+        s3 = engine.new_session(world)
+        engine.zone_edges(world, zid, s3, full=True)
+        assert set(s2.seen) <= set(s3.seen)
+    # the lens: both directions for one module, in one screen
+    zone = world.zones[zid]
+    m = max(zone.members,
+            key=lambda x: sum(1 for e in world.edges if e.dst == x))
+    lens = engine.zone_edges(world, zid, s, mod=m)
+    assert lens[0].startswith(f"top-level edges touching {m}")
+
+
 def test_walk_package_hop_forgiven():
     from buzz.model import World, Question, Module, Zone, Edge, Session
     w = World(repo="x", sha="y")

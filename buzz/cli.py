@@ -272,9 +272,32 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
         print(render.render_look(world, s, at))
         print("\n" + _try_next(world, s))
     elif cmd == "edges":
-        zid = (engine.resolve_zone(world, " ".join(rest)) if rest
-               else world.modules[s.here].zone)
-        print("\n".join(engine.zone_edges(world, zid, s)))
+        args = list(rest)
+        full = bool(args) and args[-1] == "full"
+        if full:
+            args = args[:-1]
+        # trailing tokens may be a module lens ('edges z1 conf') or a
+        # comparison ('edges z1 conf http urls'); bare 'edges conf'
+        # uses the module's own district, fog permitting
+        mods: list[str] = []
+        while args:
+            try:
+                mods.append(engine.resolve_visible(world, s, args[-1]))
+                args = args[:-1]
+            except GameError:
+                break
+        mods.reverse()
+        if args:
+            zid = engine.resolve_zone(world, " ".join(args))
+        elif mods:
+            if mods[0] in render.masked_modules(world, s):
+                raise GameError(f"{mods[0]}'s district is still unknown "
+                                f"to you - name one: edges z1 {mods[0]}")
+            zid = world.modules[mods[0]].zone
+        else:
+            zid = world.modules[s.here].zone
+        print("\n".join(engine.zone_edges(world, zid, s, full=full,
+                                          mod=mods or None)))
     elif cmd == "go":
         if not rest:
             raise GameError("usage: buzz go <module>")
