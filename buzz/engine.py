@@ -169,7 +169,8 @@ def _name_seen(s: Session | None, *mods: str) -> None:
 
 
 def zone_edges(world: World, zid: str, s: Session | None = None,
-               full: bool = False, mod: str | None = None) -> list[str]:
+               full: bool = False,
+               mod: str | list[str] | None = None) -> list[str]:
     """The induced top-level import subgraph of one district - the audit
     trail behind hub/region/gate quests. The default view GROUPS edges
     (one row per import target in-district; one row per endpoint per
@@ -219,33 +220,71 @@ def zone_edges(world: World, zid: str, s: Session | None = None,
                          "district)")
         return lines
 
-    if mod is not None:
+    mods = ([mod] if isinstance(mod, str) else list(mod or []))
+
+    def _leaf(m: str) -> bool:
+        return not any(e2.kind == TOP and e2.src == m for e2 in world.edges)
+
+    if len(mods) > 1:
+        # the comparison lens: counts only, one line per candidate -
+        # eleven single lenses for one hub quest was ceremony (BIGEDGEc)
+        lines.append(f"comparing {len(mods)} modules in {zname} ({zid}) "
+                     f"(top-level, this district's listing):")
+        _name_seen(s, *mods)
+        for m in sorted(mods):
+            n_in = sum(1 for e in edges if e.dst == m)
+            n_out = sum(1 for e in edges if e.src == m)
+            n_x = sum(1 for e in cross if m in (e.src, e.dst))
+            lines.append(f"  {m}: {n_in} in-district importer(s), "
+                         f"{n_out} forward import(s), {n_x} cross-district "
+                         f"edge(s)")
+        lines.append("  ('edges " + zid + " <module>' shows one module's "
+                     "edges by name)")
+        return legend()
+
+    if mods:
         # the candidate lens: every top-level edge touching one module,
         # uncapped and counted - shortlist candidates from the grouped
-        # view, then compare them one by one here
-        lines.append(f"top-level edges touching {mod} in {zname} ({zid}):")
-        imps = sorted(e.src for e in edges if e.dst == mod)
-        outs = sorted(e.dst for e in edges if e.src == mod)
-        c_out = sorted(f"{e.dst} [{zone_of.get(e.dst, '?')}]"
-                       for e in cross if e.src == mod)
+        # view, then compare them here. (leaf) tags forward imports that
+        # import nothing further top-level - dead ends for walks
+        # (BIGEDGEc: a lens-only walk burned ~19 calls on dead branches)
+        m0 = mods[0]
+        lines.append(f"top-level edges touching {m0} in {zname} ({zid}):")
+        imps = sorted(e.src for e in edges if e.dst == m0)
+        outs = sorted(e.dst for e in edges if e.src == m0)
+        c_out = sorted((e.dst for e in cross if e.src == m0))
         c_in = sorted(f"{e.src} [{zone_of.get(e.src, '?')}]"
-                      for e in cross if e.dst == mod)
-        _name_seen(s, mod, *imps, *outs)
+                      for e in cross if e.dst == m0)
+        _name_seen(s, m0, *imps, *outs, *c_out)
         for e in cross:
-            if mod in (e.src, e.dst):
-                _name_seen(s, e.src, e.dst)
+            if m0 == e.dst:
+                _name_seen(s, e.src)
+        leafy = False
         if imps:
             lines.append(f"  in-district importers ({len(imps)}): "
                          + ", ".join(imps))
         if outs:
+            fmt = []
+            for d in outs:
+                tag = " (leaf)" if _leaf(d) else ""
+                leafy = leafy or bool(tag)
+                fmt.append(d + tag)
             lines.append(f"  in-district imports ({len(outs)}): "
-                         + ", ".join(outs))
+                         + ", ".join(fmt))
         if c_out:
-            lines.append("  outward cross-district: " + ", ".join(c_out))
+            fmt = []
+            for d in c_out:
+                tag = " (leaf)" if _leaf(d) else ""
+                leafy = leafy or bool(tag)
+                fmt.append(f"{d} [{zone_of.get(d, '?')}]" + tag)
+            lines.append("  outward cross-district: " + ", ".join(fmt))
         if c_in:
             lines.append("  inward cross-district: " + ", ".join(c_in))
         if len(lines) == 1:
             lines.append("  (no top-level edges touch it in this listing)")
+        if leafy:
+            lines.append("  ((leaf) = imports nothing further top-level - "
+                         "a dead end for forward walks)")
         return legend()
 
     n_dst = len({e.dst for e in edges})
@@ -279,8 +318,8 @@ def zone_edges(world: World, zid: str, s: Session | None = None,
             lines.append("  (rows ending '...' have more importers - "
                          "shortened while this district's hub quest is "
                          "open, so row size can't hand over the tally; "
-                         "compare candidates with "
-                         "'edges <district> <module>')")
+                         "compare candidates in one call: "
+                         f"'edges {zid} <m1> <m2> ...')")
     # NB: withheld edges get no note here - "N unplaced modules in THIS
     # district" is the same leak in a different coat
     if not edges:
@@ -299,26 +338,44 @@ def zone_edges(world: World, zid: str, s: Session | None = None,
                     lines.append(f"  {e.src} [{zone_of.get(e.src, '?')}] "
                                  f"-> {e.dst}")
         else:
+            # capped like the in-district block (BIGEDGEc: this section
+            # was ~120 uncapped lines - the bulk of the dump). No quest
+            # withholds cross-district counts, so '+N more' is safe
+            # here. Only printed names are marked seen.
+            BUSY = 20
             outward: dict[str, list[str]] = {}
             inward: dict[str, list[str]] = {}
             for e in cross:
-                _name_seen(s, e.src, e.dst)  # printed = seen
                 if e.src in members:
-                    outward.setdefault(e.src, []).append(
-                        f"{e.dst} [{zone_of.get(e.dst, '?')}]")
+                    outward.setdefault(e.src, []).append(e.dst)
                 else:
-                    inward.setdefault(e.dst, []).append(
-                        f"{e.src} [{zone_of.get(e.src, '?')}]")
+                    inward.setdefault(e.dst, []).append(e.src)
+
+            def _cross_block(title: str, d: dict[str, list[str]],
+                             arrow: str) -> None:
+                lines.append(f"  {title}")
+                rows = sorted(d.items(),
+                              key=lambda kv: (-len(kv[1]), kv[0]))
+                for m, partners in rows[:BUSY]:
+                    ps = sorted(partners)
+                    shown = ps[:CAP]
+                    _name_seen(s, m, *shown)
+                    tail = (f", +{len(ps) - len(shown)} more"
+                            if len(ps) > len(shown) else "")
+                    lines.append(f"    {m} {arrow} " + ", ".join(
+                        f"{p} [{zone_of.get(p, '?')}]" for p in shown)
+                        + tail)
+                if len(rows) > BUSY:
+                    lines.append(f"    (+{len(rows) - BUSY} more "
+                                 f"module(s) - 'edges {zid} full' or "
+                                 f"'edges {zid} <module>' has the rest)")
+
             if outward:
-                lines.append("  outward (this district imports):")
-                for m in sorted(outward):
-                    lines.append(f"    {m} -> "
-                                 + ", ".join(sorted(outward[m])))
+                _cross_block("outward (this district imports):",
+                             outward, "->")
             if inward:
-                lines.append("  inward (imported from outside):")
-                for m in sorted(inward):
-                    lines.append(f"    {m} <- "
-                                 + ", ".join(sorted(inward[m])))
+                _cross_block("inward (imported from outside):",
+                             inward, "<-")
     if hub_open:
         lines.append("(in-degree tally withheld: this district's hub quest "
                      "is still open - that count IS the answer)")
