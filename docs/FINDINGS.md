@@ -233,6 +233,32 @@ unconditionally) - re-entering via play wiped a run's XP; likely
 behind earlier "state loss" reports. play now resumes (the exam's
 W2 fix pattern); fresh runs are explicit (new BUZZ_SESSION).
 
+**Round BIGEDGE / c / c2** (2026-08-29, the first big-repo round:
+django, 899 modules, 3115 edges - built because the owner's private
+big repo hit walls the pixie-scale panels never could). The wall:
+`edges z1` was 768 one-arrow lines and the hub quest asked for
+hand-counting across them; the withheld tally was also theater (one
+shell pipe reconstructs it), so the misery landed only on eyeball
+players. Three rounds: (1) group by import target - 768->193, but
+both scouts then solved hubs from ROW LENGTH alone (hiding the
+number while printing all 58 names is not withholding); (2) cap
+rows at six names + a numberless '...' while the hub quest is open
+(never '+N more' - N is the tally), add the `edges <zone> <module>`
+lens (uncapped, counted, both directions - also the forward-hop
+tool walks lacked); (3) the comparison lens `edges <zone> <m1> <m2>
+...` (11 single lenses per hub was ceremony), (leaf) tags on
+forward imports (a lens-only walk burned ~19 calls on dead
+branches; leafness is graph truth), cross block capped like the
+rest, lens lists wrapped (a hub's 89 importers came out as one
+2852-char line). Final: 119 lines, hub loop timed at ~24s,
+verdict ship at purpose 7. Meta-lesson: a fog rule is only as
+honest as its least-equipped bypass - withholding a number while
+printing the list it counts is a rule the shell never enforced.
+Open residue (owner's call): leaf tags close dead branches but do
+not rank live ones - multi-district walk quests (q39-shaped, 4+
+hops across 3 districts) still cost 15+ lens calls and walk hints
+give only hop count, not direction.
+
 **Learning met the bar** (8.00 across four separate rounds, both repos;
 every claim graph-, git-, or source-checkable). **Continue peaked at 7.17
 (round 10) and plateaued in the 6-7.2 band** with round-to-round noise of

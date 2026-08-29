@@ -259,27 +259,39 @@ def zone_edges(world: World, zid: str, s: Session | None = None,
         for e in cross:
             if m0 == e.dst:
                 _name_seen(s, e.src)
+
+        def _wrapped(label: str, names: list[str]) -> None:
+            # the lens stays UNCAPPED (it is the honest instrument), but
+            # never as one unbounded line - a hub's 89 importers came
+            # out as a single 2852-char row (BIGEDGEc2)
+            for i in range(0, len(names), 8):
+                chunk = ", ".join(names[i:i + 8])
+                if i == 0:
+                    lines.append(f"  {label}: {chunk}"
+                                 + ("," if len(names) > 8 else ""))
+                else:
+                    more = i + 8 < len(names)
+                    lines.append(f"      {chunk}" + ("," if more else ""))
+
         leafy = False
         if imps:
-            lines.append(f"  in-district importers ({len(imps)}): "
-                         + ", ".join(imps))
+            _wrapped(f"in-district importers ({len(imps)})", imps)
         if outs:
             fmt = []
             for d in outs:
                 tag = " (leaf)" if _leaf(d) else ""
                 leafy = leafy or bool(tag)
                 fmt.append(d + tag)
-            lines.append(f"  in-district imports ({len(outs)}): "
-                         + ", ".join(fmt))
+            _wrapped(f"in-district imports ({len(outs)})", fmt)
         if c_out:
             fmt = []
             for d in c_out:
                 tag = " (leaf)" if _leaf(d) else ""
                 leafy = leafy or bool(tag)
                 fmt.append(f"{d} [{zone_of.get(d, '?')}]" + tag)
-            lines.append("  outward cross-district: " + ", ".join(fmt))
+            _wrapped("outward cross-district", fmt)
         if c_in:
-            lines.append("  inward cross-district: " + ", ".join(c_in))
+            _wrapped(f"inward cross-district ({len(c_in)})", c_in)
         if len(lines) == 1:
             lines.append("  (no top-level edges touch it in this listing)")
         if leafy:
