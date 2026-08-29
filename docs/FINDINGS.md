@@ -258,6 +258,17 @@ Open residue (owner's call): leaf tags close dead branches but do
 not rank live ones - multi-district walk quests (q39-shaped, 4+
 hops across 3 districts) still cost 15+ lens calls and walk hints
 give only hop count, not direction.
+Coda - an instrument limitation made explicit: the owner's next
+dogfood called the shipped screen "hard to read, wordy, no colors"
+- and no panel could ever have caught that, because scouts drive
+the game through pipes, where output is plain BY DESIGN (rule 2),
+and text-reading agents have no perception of density or type
+anyway. The panel validates information design, loops, and
+honesty; color and typography are validated by human eyes and tmux
+captures. A restrained paint() pass (gold section headers, cyan
+scan anchors, dim meta/tips/tags, yellow leaf tags) went onto
+edges and the quest card, with footers deduped; piped output
+verified byte-plain, TTY render verified via tmux -e capture.
 
 **Learning met the bar** (8.00 across four separate rounds, both repos;
 every claim graph-, git-, or source-checkable). **Continue peaked at 7.17
