@@ -303,9 +303,9 @@ def render_question(world: World, s: Session, q) -> str:
                     f"import edges, tallied")
     elif q.qtype == "hub":
         evidence = (f"evidence: 'buzz edges {q.zone}' groups this "
-                    f"district's imports by target ('module <- its "
-                    f"importers') - find the target with the most "
-                    f"in-district importers yourself (the ready-made "
+                    f"district's imports by target - rows ending '...' "
+                    f"have many importers; compare those candidates with "
+                    f"'buzz edges {q.zone} <module>' (the ready-made "
                     f"tally stays withheld until this quest is solved)")
     elif q.qtype == "hotspot":
         evidence = (f"evidence: 'buzz look <module>' shows a building's "
