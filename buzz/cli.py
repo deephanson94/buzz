@@ -272,9 +272,11 @@ def dispatch(world: World, s: Session, cmd: str, rest: list[str]) -> None:
         print(render.render_look(world, s, at))
         print("\n" + _try_next(world, s))
     elif cmd == "edges":
-        zid = (engine.resolve_zone(world, " ".join(rest)) if rest
+        full = bool(rest) and rest[-1] == "full"
+        zrest = rest[:-1] if full else rest
+        zid = (engine.resolve_zone(world, " ".join(zrest)) if zrest
                else world.modules[s.here].zone)
-        print("\n".join(engine.zone_edges(world, zid, s)))
+        print("\n".join(engine.zone_edges(world, zid, s, full=full)))
     elif cmd == "go":
         if not rest:
             raise GameError("usage: buzz go <module>")

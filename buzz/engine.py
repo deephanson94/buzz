@@ -168,11 +168,19 @@ def _name_seen(s: Session | None, *mods: str) -> None:
             s.seen.append(m)
 
 
-def zone_edges(world: World, zid: str, s: Session | None = None) -> list[str]:
-    """The induced top-level import subgraph of one district, with in-district
-    in-degree tallies - the audit trail behind hub/region/gate quests. The
-    tally is withheld while the district's own hub quest is open (it would
-    BE the answer); everywhere else the game does the counting for you."""
+def zone_edges(world: World, zid: str, s: Session | None = None,
+               full: bool = False) -> list[str]:
+    """The induced top-level import subgraph of one district - the audit
+    trail behind hub/region/gate quests. Default view GROUPS edges (by
+    import target in-district, by in-district endpoint across districts):
+    a big repo's district dumped one arrow per line ran to 768 lines and
+    the hub quest asked the player to hand-count arrowheads across them
+    (owner dogfood). `full` restores the one-arrow-per-line dump for
+    pipes and precise route reading. Both views print exactly the same
+    module names (printed = seen, c12 accounting). The in-degree tally
+    is withheld while the district's own hub quest is open (it would BE
+    the answer) - the grouped view keeps targets alphabetical and
+    count-free, so order never leaks what the tally withholds."""
     members = set(world.zones[zid].members)
     # a module under an OPEN place quest must not appear in a titled
     # district's member list - membership IS that quest's answer (round
@@ -187,10 +195,21 @@ def zone_edges(world: World, zid: str, s: Session | None = None) -> list[str]:
     zname = (world.zones[zid].name
              if s is None or zid in known_zones(world, s)
              else "??? (unexplored district)")
-    lines = [f"top-level import edges inside {zname} ({zid}):"]
-    for e in sorted(edges, key=lambda e: (e.src, e.dst)):
+    n_dst = len({e.dst for e in edges})
+    lines = [f"top-level import edges inside {zname} ({zid}): "
+             f"{len(edges)} edge(s) onto {n_dst} imported module(s)"
+             + ("" if full else "  ('edges ... full' lists every arrow)")]
+    for e in edges:
         _name_seen(s, e.src, e.dst)
-        lines.append(f"  {e.src} -> {e.dst}")
+    if full:
+        for e in sorted(edges, key=lambda e: (e.src, e.dst)):
+            lines.append(f"  {e.src} -> {e.dst}")
+    elif edges:
+        by_dst: dict[str, list[str]] = {}
+        for e in edges:
+            by_dst.setdefault(e.dst, []).append(e.src)
+        for dst in sorted(by_dst):
+            lines.append(f"  {dst} <- {', '.join(sorted(by_dst[dst]))}")
     # NB: withheld edges get no note here - "N unplaced modules in THIS
     # district" is the same leak in a different coat
     if not edges:
@@ -205,12 +224,30 @@ def zone_edges(world: World, zid: str, s: Session | None = None) -> list[str]:
         masked = masked_modules(world, s) if s is not None else set()
         zone_of = {m: ("???" if m in masked else world.modules[m].zone)
                    for m in world.modules}
-        for e in sorted(cross, key=lambda e: (e.src, e.dst)):
+        for e in cross:
             _name_seen(s, e.src, e.dst)  # printed = seen (c12 accounting)
-            if e.src in members:
-                lines.append(f"  {e.src} -> {e.dst} [{zone_of.get(e.dst, '?')}]")
-            else:
-                lines.append(f"  {e.src} [{zone_of.get(e.src, '?')}] -> {e.dst}")
+        if full:
+            for e in sorted(cross, key=lambda e: (e.src, e.dst)):
+                if e.src in members:
+                    lines.append(f"  {e.src} -> {e.dst} "
+                                 f"[{zone_of.get(e.dst, '?')}]")
+                else:
+                    lines.append(f"  {e.src} [{zone_of.get(e.src, '?')}] "
+                                 f"-> {e.dst}")
+        else:
+            outward: dict[str, list[str]] = {}
+            inward: dict[str, list[str]] = {}
+            for e in cross:
+                if e.src in members:
+                    outward.setdefault(e.src, []).append(
+                        f"{e.dst} [{zone_of.get(e.dst, '?')}]")
+                else:
+                    inward.setdefault(e.dst, []).append(
+                        f"{e.src} [{zone_of.get(e.src, '?')}]")
+            for m in sorted(outward):
+                lines.append(f"  {m} -> {', '.join(sorted(outward[m]))}")
+            for m in sorted(inward):
+                lines.append(f"  {m} <- {', '.join(sorted(inward[m]))}")
     def quest_open(qt: str) -> bool:
         return s is not None and any(
             q.qtype == qt and q.zone == zid and q.id not in s.resolved
