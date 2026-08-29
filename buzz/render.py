@@ -291,11 +291,25 @@ def render_question(world: World, s: Session, q) -> str:
                 "edge rule: any import edge you can traverse counts "
                 "(sealed tunnels too, once tunnel-vision is unlocked)")
     evidence = ""
-    if q.qtype in ("region", "hub", "gate", "hotspot"):
-        # the tool that cracks these fastest, surfaced where it's needed
-        # instead of buried in help (a panel found it too late)
+    # the tool that cracks each of these fastest, surfaced where it's
+    # needed instead of buried in help (a panel found it too late). The
+    # line must not promise what the game withholds: edges hides the
+    # in-degree tally while the hub quest is open, and the churn ranking
+    # while the hotspot quest is open - the count IS those answers
+    # (owner dogfood: "tallied" sent them hunting for a tally that
+    # never came)
+    if q.qtype in ("region", "gate"):
         evidence = (f"evidence: 'buzz edges {q.zone}' dumps this district's "
                     f"import edges, tallied")
+    elif q.qtype == "hub":
+        evidence = (f"evidence: 'buzz edges {q.zone}' lists every "
+                    f"in-district import arrow - count the arrows into "
+                    f"each module yourself (the ready-made tally stays "
+                    f"withheld until this quest is solved)")
+    elif q.qtype == "hotspot":
+        evidence = (f"evidence: 'buzz look <module>' shows a building's "
+                    f"commit count (the district's churn ranking stays "
+                    f"withheld until this quest is solved)")
     # generation bakes district names into quest prose; display is
     # where the fog lives (round c7: 'quest q26' named The Defaults
     # Atrium on a virgin session)
