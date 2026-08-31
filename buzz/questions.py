@@ -198,8 +198,12 @@ def gen_region(world: World, G: nx.DiGraph, zone_id: str, boss: bool = False,
         f"A breaking change lands on {x} tonight.",
     ])
     _q(world, zone_id, "region", "region",
-       f"{lead} Select every candidate that could break - everything that "
-       f"imports {x} directly or through a chain. {EDGE_RULE} A chain may "
+       f"{lead} Select every candidate that could break THROUGH IMPORTS - "
+       f"everything that "
+       f"imports {x} directly or through a chain. (A module that loads {x} "
+       f"by NAME at runtime - a settings string, import_string, an entry "
+       f"point - can break too, and this map cannot see it.) {EDGE_RULE} "
+       f"A chain may "
        f"pass through modules OUTSIDE the candidate list (even other zones) - "
        f"the candidates are only what you select from. "
        f"Candidates: {', '.join(cands)}.",
@@ -410,6 +414,8 @@ def gen_elder(world: World, zone_id: str, used: set | None = None) -> int:
     used = used if used is not None else set()
     if _sig("elder", zone_id) in used:
         return 0
+    if world.shallow:
+        return 0  # birthdays would be the clone horizon, not file age
     dated = [m for m in zone.members
              if world.modules[m].born
              and world.modules[m].commits >= (2 if _small(world) else 5)]
@@ -929,11 +935,12 @@ def gen_journey(world: World, count: int = 3,
         used.add(_sig("journey-dst", dst))
         used.add(_sig("journey-nodes", *path))
         _q(world, world.modules[e].zone, "journey", "walk",
-           f"A run begins at {e} and ends with code in {dst} "
-           f"executing. Follow the WORK, not the "
+           f"{e} does not import {dst}, yet its code reaches it by "
+           f"CALLING. Follow the calls, not the "
            f"imports: name the stations in order from {e} to {dst}, where "
            f"every hop is a real function CALL from one module into the "
-           f"next. Evidence: 'buzz flow <module>' shows who a file you "
+           f"next. (Each hop is a real call site; buzz does not claim one "
+           f"single run walks the whole path.) Evidence: 'buzz flow <module>' shows who a file you "
            f"have read calls into. answer <module> <module> ...",
            {"src": e, "dst": dst, "example": path, "flow": True},
            xp=15 * d, distance=d + 1)
@@ -1043,11 +1050,19 @@ def generate_questions(world: World) -> None:
         n = 0
         if not capped("cycle"):  # carries the ability unlock, so tried first
             n += gen_cycle(world, Gtop, z.id, used=used)
-        n += git_pass(z, 2)
+        # the FIRST district is the whole first impression, and a global
+        # rebalance does not reach it: django's starting chamber still
+        # came out 7/8 import-graph with the boss as its fourth walk.
+        # Front-load the non-structural tiers where the player actually
+        # starts, and spend less of the chain budget there.
+        opening = z.order == 0
+        n += git_pass(z, 3 if opening else 2)
         mix = z.order % 3
         if mix == 0:
-            if walk_left(3):
-                n += gen_walk(world, Gtop, z.id, count=walk_left(3), used=used)
+            want = 1 if opening else 3
+            if walk_left(want):
+                n += gen_walk(world, Gtop, z.id, count=walk_left(want),
+                              used=used)
             if not capped("region"):
                 n += gen_region(world, Gtop, z.id, used=used)
             if not capped("hub"):

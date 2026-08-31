@@ -512,7 +512,14 @@ def _award(s: Session, q: Question, frac: float) -> int:
     return gained
 
 
-def _explain(world: World, q: Question) -> str:
+def _explain(world: World, q: Question, s: Session | None = None) -> str:
+    # a chain quest accepts ANY valid route, so "what this run
+    # established" must be the route the player walked, not the one the
+    # generator happened to store
+    if s is not None and q.verb == "walk":
+        mine = s.answers.get(q.id)
+        if mine and len(mine) >= 2:
+            return f"one real chain: {' -> '.join(mine)}"
     t = q.truth
     if q.qtype in ("walk", "cycle", "detour", "via"):
         return f"one real chain: {' -> '.join(t['example'])}"
@@ -796,11 +803,30 @@ def answer(world: World, s: Session, qid: str, verb: str, args: list[str]) -> di
                             if c["src"] == a and c["dst"] == b), None)
                 fns = "/".join(rec["via"][:2]) if rec and rec.get("via") else "?"
                 legs.append(f"{a} -({fns})->")
-            result["explain"] = ("the work travels: " + " ".join(legs)
-                                 + " " + theirs[-1])
+            # NOT "the work travels": each hop is an observed call site,
+            # but buzz never proved one execution takes the whole path
+            # (a scout verified a graded chain whose middle hop only
+            # runs from ValidationError.__hash__ - raising the first
+            # module's exception never reaches it). Claim the edges,
+            # which are real; do not claim the journey.
+            result["explain"] = ("call edges, hop by hop: " + " ".join(legs)
+                                 + " " + theirs[-1]
+                                 + "  (each hop is a real call site; buzz "
+                                   "does not prove one run takes the whole "
+                                   "path)")
         else:
             result["explain"] = "your chain checks out: " + " -> ".join(theirs)
 
+    # remember the player's OWN answer: recap used to reprint the
+    # canonical chain under the header "What this run established",
+    # silently replacing what the player actually walked (a scout found
+    # three of its own solves rewritten, including the one edge it
+    # called the most interesting thing it discovered)
+    if correct or partial:
+        try:
+            s.answers[q.id] = [resolve_module(world, a) for a in args]
+        except GameError:
+            s.answers[q.id] = list(args)
     if correct:
         s.resolved[q.id] = "correct"
         result["gained"] = _award(s, q, 1.0)
@@ -1089,15 +1115,22 @@ def flow(world: World, s: Session, name: str) -> list[str]:
     outs = [c for c in world.calls if c["src"] == m]
     ins = [c for c in world.calls if c["dst"] == m]
     lines = [f"where {m}'s work goes (function calls, not just imports):"]
-    import re as _re
+    # A seam is a real dynamic dispatch, not a naming convention. This
+    # used to regex the CALLEE NAME for get_/make_/resolve_ and assert
+    # "the concrete callee is chosen at RUNTIME" - so it fired on plain
+    # string helpers (make_hashable, get_text_list, capfirst) and missed
+    # import_string, django's actual dispatcher. An analyzer asserting an
+    # unverified inference as fact is the same sin rule 1 names for LLM
+    # prose. Only the known dynamic loaders count now.
+    LOADERS = {"import_string", "import_module", "__import__",
+               "load_backend", "getattr", "entry_point", "load_entry_point"}
     for c in sorted(outs, key=lambda c: c["dst"]):
         _name_seen(s, c["dst"])
-        seam = any(_re.match(r"(get_|lookup|resolve|make_|create_|factory)",
-                             v) for v in c["via"]) or "registry" in c["dst"]
+        hit = sorted(LOADERS.intersection(c["via"]))
         lines.append(f"  calls into {c['dst']}  ({', '.join(c['via'])})"
-                     + ("  <- a lookup seam: the concrete callee is chosen "
-                        "at RUNTIME - static analysis stops here"
-                        if seam else ""))
+                     + (f"  <- dynamic dispatch via {hit[0]}(): the "
+                        f"concrete target is chosen at RUNTIME and the "
+                        f"import graph cannot see it" if hit else ""))
     if not outs:
         lines.append("  (no cross-module calls detected - work stays home)")
     called = {c["dst"] for c in outs}

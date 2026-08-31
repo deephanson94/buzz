@@ -843,7 +843,11 @@ def test_flow_extraction_and_journey(tmp_path):
                       ["cli", "engine", "store", "codec"])
     assert not r.get("correct") and "CALLS" in (r.get("note") or "")
     r2 = engine.answer(w, s, j.id, "walk", j.truth["example"])
-    assert r2["correct"] and "the work travels" in r2["explain"]
+    # the reveal claims the call EDGES, never a single execution: buzz
+    # observes call sites, it does not prove one run composes them
+    assert r2["correct"] and "call edges" in r2["explain"]
+    assert "the work travels" not in r2["explain"]
+    assert "does not prove" in r2["explain"]
 
 
 def test_overworld_layout_pure(world):

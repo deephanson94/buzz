@@ -184,7 +184,10 @@ def render_look(world: World, s: Session, at: str | None = None) -> str:
         f"--- {node}{'' if node == s.here else '  (spyglass view)'} ---",
         f"file: {m.path} | {m.loc} lines | {m.commits} commits by "
         f"{m.authors} author(s)"
-        + (f" | first commit {m.born}" if m.born else ""),
+        + (f" | first commit {m.born}"
+           + (" (clone horizon - this checkout is shallow, the real "
+              "date is older)" if world.shallow else "")
+           if m.born else ""),
         *([f'"{m.doc}"'] if m.doc else
           [f"~ scout's impression (AI-written, unverified): {m.gloss}"]
           if m.gloss else []),

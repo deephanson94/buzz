@@ -393,6 +393,12 @@ def analyze(repo: Path) -> World:
     world.cochange = {m: sorted(v, key=lambda x: -x[1])[:25] for m, v in cc.items()}
 
     # the flow tier's ground truth: where the work actually goes at runtime
+    # a truncated clone reports its own horizon as every file's birthday
+    # (django at depth 2000: 873 modules all "born" 2024-09-05). Ages
+    # derived from it are not archaeology, so record the fact and let
+    # the generators refuse to build quests on it - rule 1 is not just
+    # about LLM prose, it is about not asserting what we cannot know.
+    world.shallow = (Path(repo) / ".git" / "shallow").exists()
     from .flow import extract_calls
     world.calls, world.entries = extract_calls(files, resolve, names)
 

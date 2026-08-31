@@ -74,7 +74,7 @@ def render_recap(world: World, s: Session) -> str:
             q = get_question(world, s, qid)
         except Exception:
             continue
-        fact = _explain(world, q)
+        fact = _explain(world, q, s)
         if not fact:
             continue
         mark = {"correct": "", "partial": " (partially worked out)",
