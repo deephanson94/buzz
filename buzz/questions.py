@@ -288,9 +288,17 @@ def gen_ghost(world: World, zone_id: str, boss: bool = False,
     for x in pool:
         if _sig("ghost", x) in used:
             continue
-        floor = 4 if _small(world) else 12
+        # An absolute floor of 12 co-changes found ZERO eligible pairs on
+        # a 1998-commit django (owner: the game is "just importing
+        # modules" - and ghost, the panels' best-moment winner, was
+        # generating nothing). What makes this quest decidable is not a
+        # magic count but the winner LEADING its rivals, so the floor
+        # drops to real-signal level and a lead check does the gating.
+        floor = 3 if _small(world) else 4
         partners = [(o, n) for o, n in world.cochange.get(x, []) if n >= floor
                     and not world.has_edge(x, o) and not world.has_edge(o, x)]
+        if len(partners) > 1 and partners[0][1] < 1.5 * partners[1][1]:
+            continue  # too close to call - the deduction would be a guess
         # the same hidden coupling must never be asked twice from opposite
         # sides (a panel found the boss fight re-asked as a zone quest)
         partners = [(o, n) for o, n in partners
@@ -409,10 +417,17 @@ def gen_elder(world: World, zone_id: str, used: set | None = None) -> int:
     if len(dated) < 2:
         return 0
     old, new = dated[0], dated[-1]
-    # gap must be wide enough to be fair: a year normally; a month on a
-    # young small hive (where a year gap cannot exist yet)
-    cut = 7 if _small(world) else 4
-    if world.modules[old].born[:cut] == world.modules[new].born[:cut]:
+    # A calendar-year BOUNDARY is not an age gap: two modules five days
+    # apart across New Year passed, ten months apart inside one year
+    # failed. Compare real elapsed days (1/10 django zones qualified
+    # under the old rule).
+    import datetime as _dt
+    try:
+        span = (_dt.date.fromisoformat(world.modules[new].born[:10])
+                - _dt.date.fromisoformat(world.modules[old].born[:10])).days
+    except ValueError:
+        return 0
+    if span < (30 if _small(world) else 120):
         return 0
     used.add(_sig("elder", zone_id))
     _q(world, zone_id, "elder", "edge",
@@ -973,31 +988,64 @@ def generate_questions(world: World) -> None:
     # big repo's post-calibration world isn't clearable at 5% coverage
     # measurement templates tightened round over round: by the fourth
     # blast radius / second hub, panels report re-running a worksheet
-    CAPS = {"cycle": 2, "region": 3, "hub": 2, "ghost": 8, "gate": 6,
-            "place": 5, "elder": 5, "hotspot": 5, "patch": 6, "scar": 3}
+    CAPS = {"cycle": 2, "region": 3, "hub": 2, "ghost": 10, "gate": 4,
+            "place": 5, "elder": 6, "hotspot": 6, "patch": 8, "scar": 4}
 
     def capped(qt: str) -> bool:
         return count(qt) >= CAPS.get(qt, 99)
 
-    # non-boss walks are budgeted per WORLD, not per zone: three panels
-    # running found a walk (and often two) in literally every district
-    WALK_BUDGET = 6
+    # THE CHAIN FAMILY SHARES ONE BUDGET. walk, detour, via and gate are
+    # four costumes on one question - reachability over the import graph
+    # - and each used to get its own allowance: a 10-district django came
+    # out 6 walks + 6 detours + 6 gates + 2 via = 22 of 50 quests, and
+    # the whole world measured 78% import-graph (owner, after a real
+    # session: "i feel like im just dealing with importing modules").
+    # One budget for the family, so districts spend it where the graph is
+    # actually interesting instead of stamping one of each everywhere.
+    CHAIN = ("walk", "detour", "via", "gate")
+    CHAIN_BUDGET = max(5, len(world.zones))
+
+    def chain_left(want: int = 1) -> int:
+        spent = sum(count(t) for t in CHAIN)
+        return max(0, min(want, CHAIN_BUDGET - spent))
 
     def walk_left(want: int) -> int:
-        return max(0, min(want, WALK_BUDGET - count("walk")))
+        return chain_left(want)
+
+    # EVERY district gets git-history work. ghost and patch were the
+    # panels' best-moment winners in nearly every round, yet the old
+    # rotation only reached scar/elder in a third of districts and
+    # hotspot in another third - so the tier players like most was the
+    # rarest thing in the world. Rotate which type LEADS so districts
+    # still play differently.
+    def git_pass(z, want: int) -> int:
+        # ghost always gets FIRST refusal: it is the panels' best-moment
+        # winner and the scarcest type (on django only 2 districts hold a
+        # co-change pair with no import edge between them), so leaving it
+        # to a rotation meant it lost its slot to types that fire
+        # everywhere. It fails fast when there is nothing to ask.
+        rest = [("patch", lambda: gen_patch(world, z.id, used=used)),
+                ("hotspot", lambda: gen_hotspot(world, z.id, used=used)),
+                ("elder", lambda: gen_elder(world, z.id, used=used)),
+                ("scar", lambda: gen_scar(world, z.id, used=used))]
+        made = 0
+        if not capped("ghost"):
+            made += gen_ghost(world, z.id, used=used)
+        for i in range(len(rest)):
+            if made >= want:
+                break
+            qt, fn = rest[(i + z.order) % len(rest)]
+            if not capped(qt):
+                made += fn()
+        return made
 
     for z in sorted(world.zones.values(), key=lambda z: z.order):
         n = 0
         if not capped("cycle"):  # carries the ability unlock, so tried first
             n += gen_cycle(world, Gtop, z.id, used=used)
+        n += git_pass(z, 2)
         mix = z.order % 3
         if mix == 0:
-            # git-history quests lead: ghost and patch were the panels'
-            # best-moment winners in nearly every round
-            if not capped("ghost"):
-                n += gen_ghost(world, z.id, used=used)
-            if not capped("patch"):
-                n += gen_patch(world, z.id, used=used)
             if walk_left(3):
                 n += gen_walk(world, Gtop, z.id, count=walk_left(3), used=used)
             if not capped("region"):
@@ -1007,27 +1055,19 @@ def generate_questions(world: World) -> None:
         elif mix == 1:
             if walk_left(2):
                 n += gen_walk(world, Gtop, z.id, count=walk_left(2), used=used)
-            n += gen_detour(world, Gtop, z.id, used=used)
-            if not capped("gate"):
+            if chain_left():
+                n += gen_detour(world, Gtop, z.id, used=used)
+            if chain_left() and not capped("gate"):
                 n += gen_gate(world, Gtop, z.id, used=used)
-            if not capped("ghost"):
-                n += gen_ghost(world, z.id, used=used)
-            if not capped("scar"):
-                n += gen_scar(world, z.id, used=used)
-            if not capped("elder"):
-                n += gen_elder(world, z.id, used=used)
             if not capped("place"):
                 n += gen_place(world, Gfull, z.id, used=used)
         else:
-            n += gen_detour(world, Gtop, z.id, used=used)
+            if chain_left():
+                n += gen_detour(world, Gtop, z.id, used=used)
             if not capped("region"):
                 n += gen_region(world, Gtop, z.id, used=used)
-            if not capped("gate"):
+            if chain_left() and not capped("gate"):
                 n += gen_gate(world, Gtop, z.id, used=used)
-            if not capped("hotspot"):
-                n += gen_hotspot(world, z.id, used=used)
-            if not capped("patch"):
-                n += gen_patch(world, z.id, used=used)
             if not capped("hub"):
                 n += gen_hub(world, Gtop, z.id, used=used)
             if n < 3 and walk_left(1):
@@ -1042,7 +1082,10 @@ def generate_questions(world: World) -> None:
                 ("refactor", lambda: gen_refactor(world, Gtop, z.id, used=used)),
                 ("cut", lambda: gen_cut(world, Gtop, z.id, used=used)),
                 ("order", lambda: gen_order(world, Gtop, z.id, used=used)),
-                ("via", lambda: gen_via(world, Gtop, z.id, used=used)),
+                # via is a chain quest wearing a decision-tier badge:
+                # it draws from the shared chain budget like the rest
+                ("via", lambda: (gen_via(world, Gtop, z.id, used=used)
+                                 if chain_left() else 0)),
             ]
             # fill whichever decision type is globally scarcest first, so
             # every type shows up across a world instead of the rotation
@@ -1070,7 +1113,7 @@ def generate_questions(world: World) -> None:
             if n < 3:
                 n += gen_direction(world, z.id, count=3 - n, used=used)
         if n < 3:  # thin zone: top up so it stays clearable and worthwhile
-            if walk_left(1):
+            if chain_left(1):
                 n += gen_walk(world, Gtop, z.id, count=1, used=used)
             if not capped("ghost"):
                 gen_ghost(world, z.id, used=used)
