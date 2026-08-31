@@ -270,6 +270,38 @@ scan anchors, dim meta/tips/tags, yellow leaf tags) went onto
 edges and the quest card, with footers deduped; piped output
 verified byte-plain, TTY render verified via tmux -e capture.
 
+**Round CARD** (2026-08-31, quest-card redesign on the django world).
+Owner, in one sitting: "I see a lot of things, my eyes are painful
+and im lost", then the correction that shaped the fix - "instead of
+purely cutting, think of what a user will want to continue to play
+and learn". Cutting alone makes a spec sheet. What shipped: the
+per-type rule sentences demoted to one dim footnote, candidate sets
+as a width-aware grid (14 candidates: 14 lines -> 5; on a big repo
+near-twins like qwen2_5_vl_pre_encoder / qwen2_vl_pre_encoder had
+been hiding inside one wrapped paragraph, and picking the wrong twin
+fails the quest), and the pull put back into lines the card already
+spent - district progress and the live streak bonus in the header.
+Scout verdict: set out to do 3-4 quests, chained SEVEN, naming the
+rising streak bonus, the try-next line and unlock moments as what
+pulled; field notes it would "bring to a code review". Held the PR
+on two dud recipe steps, both fixed: the hub step dumped ~70 lines
+to scan for the '...' rows (now the shortlist prints as a
+copy-pasteable compare command - which rows are capped is already on
+screen, so naming them leaks nothing), and the walk step advertised
+`trace`, which only CHECKS a chain you already have; walks now lead
+with `who <destination>` because a destination's fan-in is far
+narrower than a source's fan-out (the scout had burned ~8 blind
+forward calls). It also caught an honesty bug the fog audit missed:
+`look` called a function-level edge an "unsealed tunnel" while
+`trace` called the identical edge a "sealed tunnel" - the kind never
+changes, tunnel-vision only makes it PASSABLE; both now say so, and
+trace adds that such an edge never counts as top-level. Cut on the
+same evidence: the "solving banks field note #N" footer, which the
+scout stopped reading after two quests. Methodology note, against
+the color coda above: the panel cannot see typography, but it CAN
+answer "do I want to open the next one" - motivation is panel-
+testable, density is not.
+
 **Learning met the bar** (8.00 across four separate rounds, both repos;
 every claim graph-, git-, or source-checkable). **Continue peaked at 7.17
 (round 10) and plateaued in the 6-7.2 band** with round-to-round noise of
