@@ -76,6 +76,30 @@ def cmd_analyze(args: list[str]) -> None:
     nq = len(world.questions)
     print(f"world built: {len(world.modules)} modules, {len(world.edges)} edges, "
           f"{len(world.zones)} zones, {nq} quests  (pinned to {world.sha[:10]})")
+    # what KIND of questions this repo produced. A world that is nearly
+    # all import-graph plays as one question in many costumes (owner,
+    # after a real session: "i feel like im just dealing with importing
+    # modules") - and the two usual causes are both fixable by the
+    # player, so name them here rather than letting the world feel flat.
+    import collections
+    kinds = collections.Counter(q.qtype for q in world.questions.values())
+    GIT = {"ghost", "patch", "scar", "elder", "hotspot"}
+    n_git = sum(v for k, v in kinds.items() if k in GIT)
+    n_flow = kinds.get("journey", 0)
+    n_lore = kinds.get("lore", 0)
+    print(f"quest mix: {nq - n_git - n_flow - n_lore} structural, "
+          f"{n_git} from git history, {n_flow} runtime flow"
+          + (f", {n_lore} semantic" if n_lore else ""))
+    shallow = (Path(args[0]) / ".git" / "shallow").exists()
+    if shallow or not world.events:
+        print("(this checkout has little or no git history, so change-"
+              "coupling, revert and age quests cannot be built - a full "
+              "clone unlocks about a quarter more of the game)")
+    if not lore:
+        print("(no --lore: the semantic tier is off. Structural quests ask "
+              "how the code is WIRED; lore quests ask where behaviour "
+              "LIVES. 'buzz analyze <repo> --lore' adds them - see the "
+              "README for the four ways to point it at a model)")
     if len(world.modules) < 15 or len(world.edges) < 12:
         print("(a small hive: few modules, a flat import graph - expect a "
               "short campaign. buzz bites hardest on big, messy repos you "

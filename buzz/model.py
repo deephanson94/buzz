@@ -93,6 +93,7 @@ class World:
     calls: list = field(default_factory=list)     # cross-module CALL edges
     entries: list = field(default_factory=list)   # likely run entry points
     start: str = ""
+    shallow: bool = False   # truncated clone: git-derived AGES are not real
 
     def out_edges(self, name: str) -> list[Edge]:
         return [e for e in self.edges if e.src == name]
@@ -117,6 +118,7 @@ class World:
             "reverts": self.reverts,
             "calls": self.calls,
             "entries": self.entries,
+            "shallow": self.shallow,
         }
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=1))
@@ -134,6 +136,7 @@ class World:
         w.reverts = d.get("reverts", [])
         w.calls = d.get("calls", [])
         w.entries = d.get("entries", [])
+        w.shallow = d.get("shallow", False)
         return w
 
 
@@ -159,6 +162,7 @@ class Session:
     log: list[str] = field(default_factory=list)
     wanted: dict = field(default_factory=dict)   # daily mystery: date/guesses/done/won
     focus: str = ""             # tracked quest id: bare hint/answer target it
+    answers: dict = field(default_factory=dict)  # qid -> what the PLAYER said
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

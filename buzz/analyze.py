@@ -387,9 +387,18 @@ def analyze(repo: Path) -> World:
     for (a, b), n in cochange.items():
         cc[a].append([b, n])
         cc[b].append([a, n])
-    world.cochange = {m: sorted(v, key=lambda x: -x[1])[:10] for m, v in cc.items()}
+    # keep 25, not 10: ghost quests need co-changers that DON'T import
+    # the anchor, and on a big repo a module's ten strongest co-changers
+    # are all importers - truncation was starving the tier
+    world.cochange = {m: sorted(v, key=lambda x: -x[1])[:25] for m, v in cc.items()}
 
     # the flow tier's ground truth: where the work actually goes at runtime
+    # a truncated clone reports its own horizon as every file's birthday
+    # (django at depth 2000: 873 modules all "born" 2024-09-05). Ages
+    # derived from it are not archaeology, so record the fact and let
+    # the generators refuse to build quests on it - rule 1 is not just
+    # about LLM prose, it is about not asserting what we cannot know.
+    world.shallow = (Path(repo) / ".git" / "shallow").exists()
     from .flow import extract_calls
     world.calls, world.entries = extract_calls(files, resolve, names)
 
