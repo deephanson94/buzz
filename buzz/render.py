@@ -208,7 +208,9 @@ def render_look(world: World, s: Session, at: str | None = None) -> str:
     for e in sorted(outs, key=lambda e: e.kind):
         if e.kind == LAZY:
             if TUNNEL in s.abilities:
-                lines.append(f"  ~ {e.dst}  [tunnel: function-level import - passable]")
+                lines.append(f"  ~ {e.dst}  [tunnel: function-level "
+                             f"import - passable, but never counts as "
+                             f"top-level]")
             else:
                 lines.append("  # ???  [SEALED TUNNEL: a function-level import "
                              "hides its destination - solve a cycle quest]")
@@ -216,8 +218,8 @@ def render_look(world: World, s: Session, at: str | None = None) -> str:
             lines.append(f"  - {e.dst}  [types-only: never runs]")
         else:
             lines.append(f"  > {e.dst}")
-    lines.append("legend: > always-runs | # sealed tunnel | ~ unsealed tunnel "
-                 "| - types-only (never runs)")
+    lines.append("legend: > always-runs | # tunnel, still sealed "
+                 "| ~ tunnel, passable | - types-only (never runs)")
     return "\n".join(lines)
 
 
@@ -340,9 +342,16 @@ def render_question(world: World, s: Session, q) -> str:
         steps = [("buzz look <module>", "its commit count - compare the "
                   "busy-looking ones")]
     elif q.qtype in ("walk", "cycle", "detour", "via"):
-        steps = [(f"buzz edges {q.zone} <module>",
-                  "its imports; '(leaf)' = dead end"),
-                 ("buzz trace <m1> <m2> ...", "check a chain")]
+        # backward beats forward: a destination's importers are usually
+        # far fewer than a source's imports, and forward search dead-ends
+        # (round CARD: ~8 blind lens calls to find one 3-hop chain)
+        dst = q.truth.get("dst") or q.truth.get("src")
+        steps = [(f"buzz who {dst}" if dst else "buzz who <destination>",
+                  "who imports the destination - work backward"),
+                 (f"buzz edges {q.zone} <module>",
+                  "or forward: its imports; '(leaf)' = dead end"),
+                 ("buzz trace <m1> <m2> ...",
+                  "checks a chain you already have")]
     elif q.qtype == "journey":
         steps = [("buzz flow <module>", "who it CALLS (not imports)")]
     elif q.qtype in ("ghost", "patch"):
@@ -447,11 +456,9 @@ def render_question(world: World, s: Session, q) -> str:
         if zq and q.zone in known_zones(world, s):
             done = sum(1 for x in zq if x.id in s.resolved)
             head += paint(f" · {world.zones[q.zone].name} "
-                          f"{done}/{len(zq)}", "dim")
+                          f"{done}/{len(zq)} solved", "dim")
     head += paint(f" · {st}", "dim") if st != "open" else ""
-    reward = (paint(f"  solving banks field note #{len(s.resolved) + 1}",
-                    "dim") + paint("  ·  ", "dim")
-              + paint(f"stuck? buzz hint {q.id}", "dim"))
+    reward = paint(f"  stuck? buzz hint {q.id}", "dim")
     lines = [head,
              "", prompt,
              *(["", *column] if column else []),

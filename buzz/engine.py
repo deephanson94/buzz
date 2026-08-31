@@ -338,9 +338,17 @@ def zone_edges(world: World, zid: str, s: Session | None = None,
                 lines.append(f"  {paint(dst, 'cyan')} <- "
                              + ", ".join(srcs))
         if capped:
-            lines.append(paint("  ('...' = more importers - compare "
-                               f"candidates: 'edges {zid} <m1> <m2> ...')",
-                               "dim"))
+            # hand the shortlist over instead of making them scan ~70 rows
+            # for the ones ending '...' (round CARD: "an unfiltered
+            # firehose"). WHICH rows are capped is already on screen, so
+            # naming them leaks nothing - and alphabetical order keeps the
+            # withheld tally withheld.
+            shortlist = sorted(d for d, srcs in by_dst.items()
+                               if len(srcs) > CAP)
+            lines.append(paint("  '...' = more importers. Compare those "
+                               "candidates:", "dim"))
+            lines.append(paint(f"  edges {zid} " + " ".join(shortlist),
+                               "cyan"))
     # NB: withheld edges get no note here - "N unplaced modules in THIS
     # district" is the same leak in a different coat
     if not edges:
@@ -1115,7 +1123,8 @@ def trace(world: World, s: Session, path: list[str]) -> list[str]:
     tool-call grind around walk quests."""
     if len(path) < 2:
         raise GameError("buzz trace <module> <module> [module ...]")
-    kinds = {TOP: "top-level", LAZY: "sealed tunnel (function-level)",
+    kinds = {TOP: "top-level",
+             LAZY: "tunnel (function-level) - not a top-level edge",
              TYPE: "TYPE_CHECKING-only (never runs)"}
     lines = []
     ok = True
