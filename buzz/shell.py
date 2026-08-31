@@ -50,13 +50,16 @@ def _hud(world: World, s: Session) -> str:
             else world.zones[zid].name)
     facts = len(s.resolved)
     total = len(world.questions)
-    parts = [
-        f"xp {s.xp}",
-        f"streak {s.streak}",
-        f"facts {facts}/{total}",
-        f"{zone} @ {s.here}",
-    ]
-    return paint("  ".join(f"[{p}]" for p in parts), "dim")
+    # the two numbers that move (xp, facts) carry color so progress is
+    # visible at a glance; everything else stays quiet
+    return "  ".join([
+        paint("[xp ", "dim") + paint(str(s.xp), "gold") + paint("]", "dim"),
+        paint(f"[streak {s.streak}]", "dim"),
+        paint("[facts ", "dim") + paint(f"{facts}/{total}", "green")
+        + paint("]", "dim"),
+        paint("[", "dim") + paint(f"{zone} @ {s.here}", "cyan")
+        + paint("]", "dim"),
+    ])
 
 
 def _completer_factory(world: World, s: Session):

@@ -57,10 +57,14 @@ def mask_prose(world: World, s: Session, text: str) -> str:
 
 
 def _mod_label(world: World, s: Session, m: str) -> str:
+    from .ui import paint
     glyph = ROLE_GLYPH.get(world.modules[m].role, "")
-    here = " <YOU>" if m == s.here else ""
-    tag = "" if m in s.discovered else "(seen)"
-    return f"{m}{glyph and ' ' + glyph}{tag}{here}"
+    # read modules stand out from merely-sighted ones: the map's whole
+    # job is showing what you have actually been to
+    name = paint(m, "cyan") if m in s.discovered else m
+    here = paint(" <YOU>", "gold") if m == s.here else ""
+    tag = "" if m in s.discovered else paint(" (seen)", "dim")
+    return f"{name}{glyph and ' ' + glyph}{tag}{here}"
 
 
 def render_map(world: World, s: Session) -> str:
@@ -70,11 +74,12 @@ def render_map(world: World, s: Session) -> str:
                  else f"zone {world.modules[s.here].zone}, "
                       f"{world.zones[world.modules[s.here].zone].name}")
     nq = len(world.questions)
+    from .ui import paint
     lines = [
-        f"=== THE HIVE: {world.repo.rsplit('/', 1)[-1]} "
-        f"| quests {len(s.resolved)}/{nq} | modules visited {d}/{total} "
-        f"| XP {s.xp} | rank {rank(world, s)} ===",
-        f"you are at: {s.here}  ({here_zone})",
+        paint(f"=== THE HIVE: {world.repo.rsplit('/', 1)[-1]} "
+              f"| quests {len(s.resolved)}/{nq} | modules visited {d}/{total} "
+              f"| XP {s.xp} | rank {rank(world, s)} ===", "gold"),
+        f"you are at: {paint(s.here, 'cyan')}  {paint('(' + here_zone + ')', 'dim')}",
         "",
     ]
     unplaced = sorted(m for m in masked if m in s.seen)
@@ -85,17 +90,17 @@ def render_map(world: World, s: Session) -> str:
         done = sum(1 for q in zq if q.id in s.resolved)
         n_boss = sum(1 for q in world.questions.values()
                      if q.zone == z.id and q.boss)
-        status = (" *CLEARED*" if z.id in s.cleared
-                  else " (side content - no quests)" if not zq
+        status = (paint(" *CLEARED*", "green") if z.id in s.cleared
+                  else paint(" (side content - no quests)", "dim") if not zq
                   else f"  quests {done}/{len(zq)}"
-                  + (f" +{n_boss} boss" if n_boss else ""))
+                  + (paint(f" +{n_boss} boss", "magenta") if n_boss else ""))
         title = (z.name if z.id in known_zones(world, s)
                  else "??? (unexplored district)")
-        lines.append(f"[{z.id}] {title}{status}")
+        lines.append(paint(f"[{z.id}] {title}", "gold") + status)
         if z.id in s.cleared and s.here not in z.members:
             # cleared districts collapse to keep the growing map legible
-            lines.append(f"  ({len(vis)} module(s) mapped - 'buzz edges "
-                         f"{z.id}' for detail)")
+            lines.append(paint(f"  ({len(vis)} module(s) mapped - 'buzz "
+                               f"edges {z.id}' for detail)", "dim"))
             lines.append("")
             continue
         if vis:
@@ -106,21 +111,24 @@ def render_map(world: World, s: Session) -> str:
         hidden = len([m for m in z.members
                       if m not in s.seen and m not in masked])
         if hidden:
-            lines.append(f"  ... and {hidden} module(s) under fog")
+            lines.append(paint(f"  ... and {hidden} module(s) under fog",
+                               "dim"))
         lines.append("")
     if unplaced:
-        lines.append("unplaced sightings (district unknown until a scout "
-                     "places them): " + ", ".join(unplaced))
+        lines.append(paint("unplaced sightings (district unknown until a "
+                           "scout places them): ", "dim")
+                     + ", ".join(unplaced))
         lines.append("")
     if not s.boss_open:
-        lines.append(f"(boss quests are sealed until {boss_needed(world)} zones are cleared)")
+        lines.append(paint(f"(boss quests are sealed until "
+                           f"{boss_needed(world)} zones are cleared)", "dim"))
     else:
         _boss_qs = [q for q in world.questions.values() if q.boss]
         if _boss_qs and all(q.id in s.resolved for q in _boss_qs):
             pass  # the boss has fallen - status carries that story
         else:
-            lines.append("!! the BOSS LAIR is open - see 'buzz quests' "
-                         "in the boss zone")
+            lines.append(paint("!! the BOSS LAIR is open - see 'buzz "
+                               "quests' in the boss zone", "magenta"))
     return "\n".join(lines)
 
 
@@ -242,22 +250,35 @@ def render_quests(world: World, s: Session, zone_id: str) -> str:
     nb = [q for q in qs if not q.boss]
     done = sum(1 for q in nb if q.id in s.resolved)
     n_boss = len(qs) - len(nb)
-    lines = [f"quests in {zname} ({z.id}) - {done}/{len(nb)} resolved"
-             + (f" (+{n_boss} boss quest(s) listed below)" if n_boss else "")
-             + (" *CLEARED*" if zone_id in s.cleared else "") + ":"]
+    from .ui import paint
+    lines = [paint(f"quests in {zname} ({z.id}) - {done}/{len(nb)} resolved",
+                   "gold")
+             + (paint(f" (+{n_boss} boss quest(s) listed below)", "magenta")
+                if n_boss else "")
+             + (paint(" *CLEARED*", "green") if zone_id in s.cleared else "")
+             + ":"]
+
+    def _st(qid: str) -> str:
+        st = _status_of(s, qid)
+        return paint(f"[{st}]", "green" if st != "open" else "dim")
+
     for q in sorted(qs, key=lambda q: (q.boss, q.truth.get("stage", 0), q.id)):
         lock = ""
         if q.boss and not s.boss_open:
-            lock = " [LOCKED: clear more zones]"
+            lock = paint(" [LOCKED: clear more zones]", "yellow")
         elif q.boss and q.truth.get("prev_stage") not in (None, *s.resolved):
-            lock = f" [stage {q.truth['stage']}: sealed until the prior stage falls]"
-        lines.append(f"  {q.id} [{_status_of(s, q.id)}] ({q.qtype}, {q.xp} XP){lock}")
+            lock = paint(f" [stage {q.truth['stage']}: sealed until the "
+                         f"prior stage falls]", "yellow")
+        lines.append(f"  {paint(q.id, 'cyan')} {_st(q.id)} "
+                     + paint(f"({q.qtype}, {q.xp} XP)", "dim") + lock)
         if not lock and q.id not in s.resolved:
             lines.append(f"        {_gist(mask_prose(world, s, q.prompt))}")
     for f in fus:
-        lines.append(f"  {f['id']} [{_status_of(s, f['id'])}] (follow-up, {f['xp']} XP)")
+        lines.append(f"  {paint(f['id'], 'cyan')} {_st(f['id'])} "
+                     + paint(f"(follow-up, {f['xp']} XP)", "dim"))
     lines.append("")
-    lines.append("read one with 'buzz quest <id>', answer with 'buzz answer <id> ...'")
+    lines.append(paint("read one with 'buzz quest <id>', answer with "
+                       "'buzz answer <id> ...'", "dim"))
     return "\n".join(lines)
 
 
@@ -290,38 +311,65 @@ def render_question(world: World, s: Session, q) -> str:
                 if q.qtype in ("cycle", "detour") else
                 "edge rule: any import edge you can traverse counts "
                 "(sealed tunnels too, once tunnel-vision is unlocked)")
-    evidence = ""
-    # the tool that cracks each of these fastest, surfaced where it's
-    # needed instead of buried in help (a panel found it too late). The
-    # line must not promise what the game withholds: edges hides the
-    # in-degree tally while the hub quest is open, and the churn ranking
-    # while the hotspot quest is open - the count IS those answers
-    # (owner dogfood: "tallied" sent them hunting for a tally that
-    # never came)
+    # A RECIPE, not a paragraph: each step is a command you can run plus
+    # what it gets you. The owner asked twice how a hub quest is meant to
+    # be solved while a prose 'evidence:' sentence sat on the card saying
+    # exactly that - a run-on sentence is not an instruction. Steps never
+    # promise what the game withholds (the in-degree tally during a hub
+    # quest, the churn ranking during a hotspot quest ARE those answers).
+    steps: list[tuple[str, str]] = []
     if q.qtype in ("region", "gate"):
-        evidence = (f"evidence: 'buzz edges {q.zone}' dumps this district's "
-                    f"import edges, tallied")
+        steps = [(f"buzz edges {q.zone}",
+                  "this district's imports, grouped and tallied")]
     elif q.qtype == "hub":
-        evidence = (f"evidence: 'buzz edges {q.zone}' groups this "
-                    f"district's imports by target - rows ending '...' "
-                    f"have many importers; compare those candidates in "
-                    f"one call: 'buzz edges {q.zone} <m1> <m2> ...' (the "
-                    f"ready-made tally stays withheld until this quest "
-                    f"is solved)")
+        steps = [
+            (f"buzz edges {q.zone}",
+             "imports grouped by target; rows ending '...' have many "
+             "importers - those are your candidates"),
+            (f"buzz edges {q.zone} <m1> <m2> ...",
+             "compare those candidates' importer counts"),
+        ]
     elif q.qtype == "hotspot":
-        evidence = (f"evidence: 'buzz look <module>' shows a building's "
-                    f"commit count (the district's churn ranking stays "
-                    f"withheld until this quest is solved)")
+        steps = [(f"buzz edges {q.zone}", "the district's modules"),
+                 ("buzz look <module>", "one module's commit count - "
+                  "compare the busy-looking ones")]
+    elif q.qtype in ("walk", "cycle", "detour", "via"):
+        steps = [(f"buzz edges {q.zone} <module>",
+                  "one module's imports, both directions; '(leaf)' marks "
+                  "dead ends - hop forward from the live ones"),
+                 ("buzz trace <m1> <m2> ...", "check a chain before you "
+                  "answer it")]
+    elif q.qtype == "journey":
+        steps = [("buzz flow <module>",
+                  "who this file's code CALLS (imports are not calls)")]
+    elif q.qtype in ("ghost", "patch"):
+        steps = [("buzz probe <a> <b>",
+                  "import edges plus how often the two changed together"),
+                 ("buzz look <module>", "what a suspect is, if the name "
+                  "means nothing yet")]
+    elif q.qtype == "elder":
+        steps = [("buzz chronicle <module>", "a module's git history")]
     # generation bakes district names into quest prose; display is
     # where the fog lives (round c7: 'quest q26' named The Defaults
     # Atrium on a virgin session)
     prompt = mask_prose(world, s, q.prompt)
     from .ui import paint
+    # the recipe's last step IS the answer syntax - printing both said
+    # the same thing twice on an already-wordy card
+    recipe: list[str] = []
+    if steps:
+        rows = [*steps, (syntax, "your answer")]
+        width = max(len(cmd) for cmd, _ in rows)
+        recipe.append(paint("how to solve:", "cyan"))
+        for i, (cmd, why) in enumerate(rows, 1):
+            recipe.append(f"  {i}. {paint(cmd.ljust(width), 'cyan')}  "
+                          + paint(why, "dim"))
+    else:
+        recipe.append(f"answer syntax: {paint(syntax, 'cyan')}")
     lines = [paint(f"[{q.id}] ({q.qtype}, {q.xp} XP, status: {st})", "gold"),
              "", prompt,
-             *([rule] if rule else []),
-             *([paint(evidence, "cyan")] if evidence else []), "",
-             f"answer syntax: {syntax}",
+             *([rule] if rule else []), "",
+             *recipe,
              paint(f"stuck? 'buzz hint {q.id}' (level 1 free-ish, costs XP; "
                    f"level 3 reveals)", "dim")]
     return "\n".join(lines)
@@ -329,15 +377,18 @@ def render_question(world: World, s: Session, q) -> str:
 
 def _badge_line(world: World, s: Session) -> str:
     from .badges import earned
+    from .ui import paint
     got = ", ".join(name for name, _ in earned(world, s))
-    line = f"badges: {got or 'none yet'}"
+    line = paint("badges: ", "cyan") + (paint(got, "green") if got
+                                        else "none yet")
     if s.exam.get("best"):
         line += f" | exam best: {s.exam['best']}% retention"
     from .exam import in_progress
     if in_progress(s):
         e = s.exam
-        line += (f"\nEXAM IN PROGRESS [{e['idx'] + 1}"
-                 f"/{len(e['qids'])}] - 'buzz exam' shows the question")
+        line += "\n" + paint(f"EXAM IN PROGRESS [{e['idx'] + 1}"
+                             f"/{len(e['qids'])}] - 'buzz exam' shows the "
+                             f"question", "magenta")
     return line
 
 
@@ -349,35 +400,50 @@ def render_status(world: World, s: Session) -> str:
     clean = sum(1 for qid, v in s.resolved.items()
                 if v == "correct" and not s.hints.get(qid)
                 and not s.tries.get(qid))
+    from .ui import paint
+
+    def lbl(text: str) -> str:
+        return paint(text, "cyan")
+
     lines = []
     if s.focus and s.focus not in s.resolved:
-        lines.append(f"tracking: {s.focus} - 'quest' reprints it, bare "
-                     f"'hint'/'answer <...>' target it")
+        lines.append(lbl(f"tracking: {s.focus}")
+                     + paint(" - 'quest' reprints it, bare 'hint'/'answer "
+                             "<...>' target it", "dim"))
     lines += [
-        f"XP {s.xp} (base pool {total_xp}; streak bonuses stack on top) "
-        f"| rank: {rank(world, s)} (rank only ever climbs)"
+        lbl(f"XP {s.xp}")
+        + paint(f" (base pool {total_xp}; streak bonuses stack on top)", "dim")
+        + f" | rank: {rank(world, s)}"
+        + paint(" (rank only ever climbs)", "dim")
         + (f" | solved: {solved}/{attempted} attempted"
-           f" ({clean} clean - no hints, no retries)"
+           + paint(f" ({clean} clean - no hints, no retries)", "dim")
            if attempted else ""),
-        f"coverage: {d}/{total} modules read, {len(s.seen)}/{total} surveyed "
-        f"(read = visited/spyglassed; surveyed = named by scouting, probing, "
-        f"or quest work - both are real reconnaissance)",
-        f"zones cleared: {len(s.cleared)}/"
-        f"{sum(1 for z in world.zones if any(q.zone == z and not q.boss for q in world.questions.values()))}"
-        f" clearable"
-        + (f" ({', '.join(world.zones[z].name for z in s.cleared)})" if s.cleared else ""),
-        f"questions: {solved} solved, "
-        f"{sum(1 for v in s.resolved.values() if v == 'partial')} partial, "
-        f"{sum(1 for v in s.resolved.values() if v == 'revealed')} revealed",
-        f"streak: {s.streak} clean solve(s) in a row"
-        + (f" (+{min(50, 5 * s.streak)}% XP on the next clean solve)"
-           if s.streak else " (first-try, hint-free solves build a bonus)"),
-        f"abilities: {', '.join(s.abilities) or 'none yet'}",
+        lbl(f"coverage: {d}/{total} modules read, "
+            f"{len(s.seen)}/{total} surveyed")
+        + paint(" (read = visited/spyglassed; surveyed = named by scouting, "
+                "probing, or quest work - both are real reconnaissance)",
+                "dim"),
+        lbl(f"zones cleared: {len(s.cleared)}/"
+            f"{sum(1 for z in world.zones if any(q.zone == z and not q.boss for q in world.questions.values()))}"
+            f" clearable")
+        + (paint(f" ({', '.join(world.zones[z].name for z in s.cleared)})",
+                 "green") if s.cleared else ""),
+        lbl(f"questions: {solved} solved, "
+            f"{sum(1 for v in s.resolved.values() if v == 'partial')} partial, "
+            f"{sum(1 for v in s.resolved.values() if v == 'revealed')} revealed"),
+        lbl(f"streak: {s.streak} clean solve(s) in a row")
+        + (paint(f" (+{min(50, 5 * s.streak)}% XP on the next clean solve)",
+                 "green")
+           if s.streak else paint(" (first-try, hint-free solves build a "
+                                  "bonus)", "dim")),
+        lbl(f"abilities: {', '.join(s.abilities) or 'none yet'}"),
         _badge_line(world, s),
-        "boss lair: " + (
-            "CLEARED" if (boss_qs := [q for q in world.questions.values() if q.boss])
+        lbl("boss lair: ") + (
+            paint("CLEARED", "green")
+            if (boss_qs := [q for q in world.questions.values() if q.boss])
             and all(q.id in s.resolved for q in boss_qs)
-            else "OPEN" if s.boss_open else "sealed"),
+            else paint("OPEN", "magenta") if s.boss_open
+            else paint("sealed", "dim")),
     ]
     if s.victory:
         clearable = {z for z in world.zones
@@ -386,15 +452,18 @@ def render_status(world: World, s: Session) -> str:
         left = len(clearable - set(s.cleared))
         lines.append("")
         if left:
-            lines.append(f"*** CAMPAIGN CLEAR - the hive's heart is mapped. "
-                         f"Rank: {rank(world, s)} ***")
-            lines.append(f"({left} endgame district(s) stay open for 100% "
-                         f"hunters - or point buzz at another repo)")
+            lines.append(paint(f"*** CAMPAIGN CLEAR - the hive's heart is "
+                               f"mapped. Rank: {rank(world, s)} ***", "gold"))
+            lines.append(paint(f"({left} endgame district(s) stay open for "
+                               f"100% hunters - or point buzz at another "
+                               f"repo)", "dim"))
         else:
-            lines.append(f"*** FULL CLEAR - the core of this "
-                         f"hive is mapped. Final rank: {rank(world, s)} ***")
-            lines.append("(quests target the structure that matters, not "
-                         "every file - most of the fog is side rooms)")
+            lines.append(paint(f"*** FULL CLEAR - the core of this hive is "
+                               f"mapped. Final rank: {rank(world, s)} ***",
+                               "gold"))
+            lines.append(paint("(quests target the structure that matters, "
+                               "not every file - most of the fog is side "
+                               "rooms)", "dim"))
     if s.log:
         recent = s.log[-3:]
         if s.victory:
