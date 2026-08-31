@@ -307,10 +307,10 @@ def render_question(world: World, s: Session, q) -> str:
     st = _status_of(s, q.id)
     rule = ""
     if q.verb == "walk":
-        rule = ("edge rule: top-level (always-run) edges ONLY"
+        rule = ("edge rule: top-level (always-run) edges only"
                 if q.qtype in ("cycle", "detour") else
-                "edge rule: any import edge you can traverse counts "
-                "(sealed tunnels too, once tunnel-vision is unlocked)")
+                "edge rule: any import edge you can traverse counts, "
+                "sealed tunnels included once tunnel-vision is unlocked")
     # A RECIPE, not a paragraph: each step is a command you can run plus
     # what it gets you. The owner asked twice how a hub quest is meant to
     # be solved while a prose 'evidence:' sentence sat on the card saying
@@ -318,60 +318,146 @@ def render_question(world: World, s: Session, q) -> str:
     # promise what the game withholds (the in-degree tally during a hub
     # quest, the churn ranking during a hotspot quest ARE those answers).
     steps: list[tuple[str, str]] = []
-    if q.qtype in ("region", "gate"):
-        steps = [(f"buzz edges {q.zone}",
-                  "this district's imports, grouped and tallied")]
+    if q.qtype == "region":
+        # NOT 'edges <zone>': a blast radius is TRANSITIVE and its chains
+        # may leave the district (the prompt says so), while edges is
+        # district-scoped and its tally is direct in-degree. 'who' is the
+        # whole-hive fan-in, tagged by edge kind - the one tool that can
+        # actually close this set (owner dogfood on a region quest).
+        tgt = q.truth.get("target", "<module>")
+        steps = [(f"buzz who {tgt}", "its direct importers"),
+                 ("buzz who <each importer>", "repeat until no new names")]
+    elif q.qtype == "gate":
+        steps = [(f"buzz edges {q.zone}", "the district's imports"),
+                 ("buzz trace <m1> <m2> ...", "does a route survive "
+                  "without your suspect?")]
     elif q.qtype == "hub":
         steps = [
-            (f"buzz edges {q.zone}",
-             "imports grouped by target; rows ending '...' have many "
-             "importers - those are your candidates"),
-            (f"buzz edges {q.zone} <m1> <m2> ...",
-             "compare those candidates' importer counts"),
+            (f"buzz edges {q.zone}", "rows ending '...' are your candidates"),
+            (f"buzz edges {q.zone} <m1> <m2> ...", "compare their counts"),
         ]
     elif q.qtype == "hotspot":
-        steps = [(f"buzz edges {q.zone}", "the district's modules"),
-                 ("buzz look <module>", "one module's commit count - "
-                  "compare the busy-looking ones")]
+        steps = [("buzz look <module>", "its commit count - compare the "
+                  "busy-looking ones")]
     elif q.qtype in ("walk", "cycle", "detour", "via"):
         steps = [(f"buzz edges {q.zone} <module>",
-                  "one module's imports, both directions; '(leaf)' marks "
-                  "dead ends - hop forward from the live ones"),
-                 ("buzz trace <m1> <m2> ...", "check a chain before you "
-                  "answer it")]
+                  "its imports; '(leaf)' = dead end"),
+                 ("buzz trace <m1> <m2> ...", "check a chain")]
     elif q.qtype == "journey":
-        steps = [("buzz flow <module>",
-                  "who this file's code CALLS (imports are not calls)")]
+        steps = [("buzz flow <module>", "who it CALLS (not imports)")]
     elif q.qtype in ("ghost", "patch"):
-        steps = [("buzz probe <a> <b>",
-                  "import edges plus how often the two changed together"),
-                 ("buzz look <module>", "what a suspect is, if the name "
-                  "means nothing yet")]
+        steps = [("buzz probe <a> <b>", "edges + how often they "
+                  "changed together"),
+                 ("buzz look <module>", "what a suspect is")]
     elif q.qtype == "elder":
-        steps = [("buzz chronicle <module>", "a module's git history")]
+        steps = [("buzz chronicle <module>", "its git history")]
     # generation bakes district names into quest prose; display is
     # where the fog lives (round c7: 'quest q26' named The Defaults
     # Atrium on a virgin session)
     prompt = mask_prose(world, s, q.prompt)
     from .ui import paint
+    # A pick-from-this-set quest embeds its set as an inline comma run.
+    # On a big repo that wraps into an unreadable wall where near-twins
+    # hide side by side (owner dogfood: qwen2_5_vl_pre_encoder and
+    # qwen2_vl_pre_encoder, four lines apart in one paragraph) - and
+    # picking the wrong twin fails the quest. Lift it into a column at
+    # DISPLAY time: existing worlds get it without re-analyzing, and an
+    # exact-substring miss leaves the prompt untouched.
+    # The same two rule-sentences ride on every quest of a type and cost
+    # four dense lines each time. They are conditions, not narrative -
+    # demote them to one short dim footnote (owner: "I see a lot of
+    # things, my eyes are painful and im lost").
+    notes: list[str] = []
+    BOILER = [
+        ("Count only top-level imports that always run - function-level "
+         "(sealed tunnel) and TYPE_CHECKING-only imports do NOT count.",
+         "top-level imports only - no sealed tunnels, no type-hints"),
+        ("A chain may pass through modules OUTSIDE the candidate list "
+         "(even other zones) - the candidates are only what you select "
+         "from.", "chains may route through other districts"),
+        ("A chain may pass through modules outside this list - check "
+         "every hop.", "chains may route through other districts"),
+        ("A loading chain may pass through modules outside this list - "
+         "check every hop.", "chains may route through other districts"),
+    ]
+    for long, short in BOILER:
+        if long in prompt:
+            prompt = prompt.replace(long, "").replace("  ", " ").strip()
+            notes.append(short)
+
+    picks: list[str] = []
+    label = ""
+    for key, lbl in (("candidates", "pick from:"),
+                     ("suspects", "suspects:"),
+                     ("set", "put these in order:")):
+        items = q.truth.get(key)
+        if not isinstance(items, list) or len(items) < 4:
+            continue
+        items = [str(m) for m in items]
+        inline = ", ".join(items)
+        if inline not in prompt:
+            continue
+        tail = next((f"{w}: {inline}." for w in ("Candidates", "Suspects")
+                     if f"{w}: {inline}." in prompt), None)
+        prompt = (prompt.replace(tail, "").strip() if tail
+                  else prompt.replace(inline, "(listed below)", 1))
+        picks, label = items, lbl
+        break
+    column = []
+    if picks:
+        # grid, not a stack: fourteen candidates were fourteen lines
+        import shutil
+        term = max(60, min(shutil.get_terminal_size((100, 24)).columns, 160))
+        w = max(len(m) for m in picks) + 2
+        ncol = max(1, min(4, (term - 2) // w))
+        rows_n = -(-len(picks) // ncol)
+        column = [paint(label, "cyan")]
+        for r in range(rows_n):
+            cells = [picks[r + c * rows_n] for c in range(ncol)
+                     if r + c * rows_n < len(picks)]
+            column.append("  " + "".join(c.ljust(w) for c in cells).rstrip())
     # the recipe's last step IS the answer syntax - printing both said
     # the same thing twice on an already-wordy card
     recipe: list[str] = []
     if steps:
-        rows = [*steps, (syntax, "your answer")]
+        rows = [*steps, (syntax, "")]
         width = max(len(cmd) for cmd, _ in rows)
         recipe.append(paint("how to solve:", "cyan"))
-        for i, (cmd, why) in enumerate(rows, 1):
-            recipe.append(f"  {i}. {paint(cmd.ljust(width), 'cyan')}  "
-                          + paint(why, "dim"))
+        for cmd, why in rows:
+            recipe.append((f"  {paint(cmd.ljust(width), 'cyan')}"
+                           + (f"  {paint(why, 'dim')}" if why else ""))
+                          .rstrip())
     else:
-        recipe.append(f"answer syntax: {paint(syntax, 'cyan')}")
-    lines = [paint(f"[{q.id}] ({q.qtype}, {q.xp} XP, status: {st})", "gold"),
+        recipe.append(f"answer: {paint(syntax, 'cyan')}")
+    if rule:
+        notes.insert(0, rule.replace("edge rule: ", ""))
+    # Cutting alone makes a spec sheet. What makes someone play the NEXT
+    # one is seeing the run move: where this quest sits in its district,
+    # what a clean solve is worth right now, and that solving banks a
+    # field note (the learning IS the loot). All of it rides in the two
+    # lines the card already spends on framing - no new lines.
+    head = paint(f"[{q.id}]", "gold") + paint(f" {q.qtype} · ", "dim")
+    bonus = min(50, 5 * s.streak)
+    head += paint(f"{q.xp} XP", "gold" if q.boss else "cyan")
+    if bonus and st == "open":
+        head += paint(f" +{bonus}% streak", "green")
+    if q.qtype != "place":  # a place quest's district IS its answer
+        zq = [x for x in world.questions.values()
+              if x.zone == q.zone and not x.boss and x.qtype != "place"]
+        if zq and q.zone in known_zones(world, s):
+            done = sum(1 for x in zq if x.id in s.resolved)
+            head += paint(f" · {world.zones[q.zone].name} "
+                          f"{done}/{len(zq)}", "dim")
+    head += paint(f" · {st}", "dim") if st != "open" else ""
+    reward = (paint(f"  solving banks field note #{len(s.resolved) + 1}",
+                    "dim") + paint("  ·  ", "dim")
+              + paint(f"stuck? buzz hint {q.id}", "dim"))
+    lines = [head,
              "", prompt,
-             *([rule] if rule else []), "",
-             *recipe,
-             paint(f"stuck? 'buzz hint {q.id}' (level 1 free-ish, costs XP; "
-                   f"level 3 reveals)", "dim")]
+             *(["", *column] if column else []),
+             *([paint("  (" + " · ".join(notes) + ")", "dim")]
+               if notes else []),
+             "", *recipe, reward]
     return "\n".join(lines)
 
 
