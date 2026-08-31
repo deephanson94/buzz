@@ -54,5 +54,14 @@ mkdir game && cd game && buzz analyze <repo> [--lore] && buzz play
 3. **Gameplay changes get playtested.** The validation instrument is a
    panel of Sonnet subagents playing a real world and returning structured
    verdicts (methodology in `docs/FINDINGS.md`). Fix what converges;
-   confirm with a small follow-up panel.
+   confirm with a small follow-up panel. **Know what the panel cannot
+   see:** scouts drive the game through pipes (rule 2), so they never
+   receive color, and reading text is not the same as looking at a
+   screen - they cannot judge legibility, density, or typography. Ask
+   them what they CAN answer: does it teach, is it solvable, is it
+   honest, does the named tool work, do you want to open the next one
+   (measure the behaviour, don't ask for a feeling). Readability is the
+   owner's dogfood loop plus a `tmux capture-pane -e` check - three
+   panel rounds passed an `edges` screen the owner then called "hard to
+   read, wordy, no colors".
 4. **Wrong answers never subtract XP or remove progress.**
