@@ -302,6 +302,51 @@ the color coda above: the panel cannot see typography, but it CAN
 answer "do I want to open the next one" - motivation is panel-
 testable, density is not.
 
+**Round MIX** (2026-08-31, django with history; completionist +
+staff). Owner after a real session: "i feel like im just dealing with
+importing modules. the game felt lacklustre." Measured and true - the
+mix by what each type ASKS was 78% import-graph on a big repo (92%
+and zero git quests on a shallow clone) against 47% on a small one,
+because the chain family held four separate budgets while the git
+tier was starved (ghost needed 12 co-changes with no import edge:
+ZERO eligible pairs in 1998 django commits; elder compared calendar
+YEAR strings; cochange kept only each module's top 10 partners, all
+importers on a big repo). Fixed: one shared chain budget, ghost floor
+4 plus a lead check, elder on real day gaps, cochange 25, a git pass
+in every district with ghost given first refusal. Result 45 quests /
+16 types, chain-tracing 44%->26%, git 16%->28%.
+
+The mix fix held (completionist: 25 quests, 15 distinct recipes,
+variety 7, ship). The STAFF audit is the round's real value and it
+held at learning 6 - not for the mix but because four tiers asserted
+what they cannot know, and each is now fixed: journey composed
+independent call edges into "the work travels" (a graded chain's
+middle hop only runs from ValidationError.__hash__); elder sold the
+clone horizon as file birthdays; the "lookup seam" marker was a
+regex on callee names that fired on capfirst and missed
+import_string; recap reprinted canonical chains under "What this run
+established", silently replacing the player's own routes. Region's
+"could break" was scoped to imports, naming runtime loading as the
+blind spot it is.
+
+Two convergent findings NOT fixed, both design questions for the
+owner: the BOSS is mechanically the fourth walk (completionist: "the
+single flattest moment of the run", 80 XP and dramatic framing over
+the game's most repeated recipe), and the decision tier is argmax
+wearing a judgement verb - the staff scout solved all three refactor
+quests by structural argument without measuring, and noted its real
+answer ("this cut moves 594 to 589, don't spend the review") is not
+in the answer space. Its proposed uncap: make django's ~8 dynamic
+seams first-class (settings strings, INSTALLED_APPS, command
+loading), let "neither" be a valid decision, and build quests from
+real PR diffs graded against the follow-up fix commit.
+
+Methodology: this round is the counterexample to the color coda
+above - two scouts, 55 quests between them, found four false claims
+that twenty rounds of continue/learning scoring never surfaced,
+because nobody had asked "is what this tells me actually TRUE of
+this repo". Ask that question explicitly; it does not come for free.
+
 **Learning met the bar** (8.00 across four separate rounds, both repos;
 every claim graph-, git-, or source-checkable). **Continue peaked at 7.17
 (round 10) and plateaued in the 6-7.2 band** with round-to-round noise of
